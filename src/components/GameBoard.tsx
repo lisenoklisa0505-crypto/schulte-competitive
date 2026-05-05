@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/trpc/client';
 import io from 'socket.io-client';
-import type { Socket } from 'socket.io-client';
 import Header from '@/components/Header';
 
 interface Props {
@@ -15,7 +14,7 @@ interface Props {
 
 export default function GameBoard({ sessionId, userId, playerColor }: Props) {
   const router = useRouter();
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [socket, setSocket] = useState<any>(null);
   const [takenNumbers, setTakenNumbers] = useState<Record<number, string>>({});
   const [myMoves, setMyMoves] = useState<Set<number>>(new Set());
   const [gameStatus, setGameStatus] = useState<string>('waiting');
