@@ -29,7 +29,7 @@ export default function RoomsPage() {
       path: '/socket.io/',
     });
 
-    socket.on('room-deleted', ({ sessionId }) => {
+    socket.on('room-deleted', ({ sessionId }: { sessionId: number }) => {
       setRooms(prev => prev.filter(r => r.id !== sessionId));
     });
 
