@@ -1,16 +1,28 @@
 import { inferAsyncReturnType } from '@trpc/server';
-import { CreateNextContextOptions } from '@trpc/server/adapters/next';
+import { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import { db } from '@/db';
 import { verifyJWT } from '@/lib/auth';
 
-export async function createContext(opts: CreateNextContextOptions) {
-  const token = opts.req.cookies?.token;
+export async function createContext({ req }: FetchCreateContextFnOptions) {
+  // Получаем токен из cookies
+  const cookieHeader = req.headers.get('cookie');
+  let token = '';
+  
+  if (cookieHeader) {
+    const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+      const [name, value] = cookie.trim().split('=');
+      acc[name] = value;
+      return acc;
+    }, {} as Record<string, string>);
+    token = cookies['token'] || '';
+  }
+  
   const user = token ? await verifyJWT(token) : null;
   
   return {
     db,
     user,
-    req: opts.req,
+    req,
   };
 }
 
