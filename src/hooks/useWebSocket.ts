@@ -29,9 +29,8 @@ export function useWebSocket(sessionId: number | null) {
   useEffect(() => {
     if (!sessionId) return;
 
-    const socket = io({
+    const socket = io('/', {
       path: '/socket.io/',
-      addTrailingSlash: false,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
