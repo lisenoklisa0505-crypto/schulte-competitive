@@ -1,24 +1,20 @@
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "@/db";
+import * as schema from "@/db/schema";
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
-export async function hashPassword(password: string) {
-  return await bcrypt.hash(password, 10);
-}
-
-export async function verifyPassword(password: string, hash: string) {
-  return await bcrypt.compare(password, hash);
-}
-
-export function generateJWT(userId: number, username: string) {
-  return jwt.sign({ userId, username }, JWT_SECRET, { expiresIn: '7d' });
-}
-
-export async function verifyJWT(token: string) {
-  try {
-    return jwt.verify(token, JWT_SECRET) as { userId: number; username: string };
-  } catch {
-    return null;
-  }
-}
+export const auth = betterAuth({
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema: {
+      user: schema.users,
+      account: schema.accounts,
+      session: schema.sessions,
+      verification: schema.verifications,
+    },
+  }),
+  emailAndPassword: {
+    enabled: true,
+  },
+});

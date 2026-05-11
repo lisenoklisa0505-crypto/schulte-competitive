@@ -1,5 +1,7 @@
 import { pgTable, serial, text, timestamp, integer, jsonb, boolean, doublePrecision } from 'drizzle-orm/pg-core';
 
+// ========== ОСНОВНЫЕ ТАБЛИЦЫ ДЛЯ ИГРЫ ==========
+
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   username: text('username').unique().notNull(),
@@ -48,4 +50,36 @@ export const matchHistory = pgTable('match_history', {
   winnerId: integer('winner_id').notNull(),
   duration: integer('duration'),
   createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ========== ТАБЛИЦЫ ДЛЯ BETTER-AUTH ==========
+
+export const accounts = pgTable("accounts", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  providerUserId: text("provider_user_id"),
+  password: text("password"),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const sessions = pgTable("sessions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const verifications = pgTable("verifications", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
 });
