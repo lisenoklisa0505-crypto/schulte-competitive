@@ -1,20 +1,27 @@
-import { initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import type { Context } from "../context";
 
-const t = initTRPC.create();
+const t = initTRPC.context<Context>().create();
 
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
+const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  }
+  return next({
+    ctx: {
+      session: ctx.session,
+    },
+  });
+});
+
 // ========== AUTH ROUTER ==========
 const authRouter = router({
-  me: publicProcedure.query(async () => {
-    try {
-      return null;
-    } catch (error) {
-      return null;
-    }
+  me: publicProcedure.query(({ ctx }) => {
+    return ctx.session || null;
   }),
 });
 
@@ -29,7 +36,7 @@ const gameRouter = router({
 
 // ========== USER ROUTER ==========
 const userRouter = router({
-  getUser: publicProcedure
+  getUser: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ input }) => {
       return { id: input.id, name: "User" };
