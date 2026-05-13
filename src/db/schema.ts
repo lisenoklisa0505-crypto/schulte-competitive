@@ -2,21 +2,27 @@ import { pgTable, serial, text, timestamp, integer, jsonb, boolean, doublePrecis
 
 // ========== ОСНОВНЫЕ ТАБЛИЦЫ ДЛЯ ИГРЫ ==========
 
+// Таблица users - изменена для совместимости с better-auth
 export const users = pgTable('users', {
-  id: serial('id').primaryKey(),
-  username: text('username').unique().notNull(),
-  password: text('password').notNull(),
+  id: text('id').primaryKey(), // ← changed from serial to text (for better-auth)
+  username: text('username').unique(),
+  email: text('email').unique().notNull(), // ← added email
+  emailVerified: boolean('email_verified').default(true), // ← added for better-auth
+  password: text('password'), // ← nullable, better-auth uses its own password storage
   rating: integer('rating').default(1000),
   wins: integer('wins').default(0),
   bestTime: doublePrecision('best_time').default(0),
   createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(), // ← added for better-auth
+  name: text('name'), // ← added for better-auth
+  image: text('image'), // ← added for better-auth
 });
 
 export const gameSessions = pgTable('game_sessions', {
   id: serial('id').primaryKey(),
   tableData: jsonb('table_data').notNull(),
   status: text('status').default('waiting'),
-  winnerId: integer('winner_id'),
+  winnerId: text('winner_id'), // ← changed from integer to text (for better-auth)
   name: text('name').default(''),
   isPrivate: boolean('is_private').default(false),
   password: text('password'),
@@ -27,7 +33,7 @@ export const gameSessions = pgTable('game_sessions', {
 export const gamePlayers = pgTable('game_players', {
   id: serial('id').primaryKey(),
   sessionId: integer('session_id').notNull(),
-  userId: integer('user_id').notNull(),
+  userId: text('user_id').notNull(), // ← changed from integer to text
   color: text('color').notNull(),
   completedAt: timestamp('completed_at'),
   errors: integer('errors').default(0),
@@ -37,7 +43,7 @@ export const gamePlayers = pgTable('game_players', {
 export const gameMoves = pgTable('game_moves', {
   id: serial('id').primaryKey(),
   sessionId: integer('session_id').notNull(),
-  userId: integer('user_id').notNull(),
+  userId: text('user_id').notNull(), // ← changed from integer to text
   number: integer('number').notNull(),
   timestamp: timestamp('timestamp').defaultNow(),
   isValid: boolean('is_valid').notNull(),
@@ -47,7 +53,7 @@ export const matchHistory = pgTable('match_history', {
   id: serial('id').primaryKey(),
   sessionId: integer('session_id').notNull(),
   players: jsonb('players').notNull(),
-  winnerId: integer('winner_id').notNull(),
+  winnerId: text('winner_id').notNull(), // ← changed from integer to text
   duration: integer('duration'),
   createdAt: timestamp('created_at').defaultNow(),
 });

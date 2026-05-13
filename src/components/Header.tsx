@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { trpc } from '@/trpc/client';
+import { useSession } from '@/lib/auth-client';
 import CreateGameModal from './CreateGameModal';
 
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const { data: user, refetch } = trpc.auth.me.useQuery();
+  const { data: session, isPending } = useSession();
 
   const [showDropdown, setShowDropdown] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -16,23 +16,11 @@ export default function Header() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleLogout = () => {
-    // Полная очистка
+  const handleLogout = async () => {
     localStorage.clear();
     sessionStorage.clear();
-    // Принудительная перезагрузка
     window.location.href = '/';
   };
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (typeof window !== 'undefined') {
-        refetch();
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [refetch]);
 
   const handleMouseEnter = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -45,7 +33,6 @@ export default function Header() {
     }, 300);
   };
 
-  // Закрытие дропдауна при клике вне
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -64,6 +51,18 @@ export default function Header() {
     { name: 'Правила', href: '/rules' },
     { name: 'О игре', href: '/about' },
   ];
+
+  const user = session?.user;
+  const userName = user?.name || user?.email?.split('@')[0] || 'Пользователь';
+  const userWins = 0; // Временно, пока wins не добавлены в better-auth
+
+  if (isPending) {
+    return (
+      <>
+        <div style={{ height: '70px' }} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -132,7 +131,6 @@ export default function Header() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {user ? (
             <>
-              {/* USER */}
               <div
                 ref={dropdownRef}
                 style={{ position: 'relative' }}
@@ -162,16 +160,12 @@ export default function Header() {
                       fontWeight: 700,
                     }}
                   >
-                    {user.username[0].toUpperCase()}
+                    {userName[0].toUpperCase()}
                   </div>
 
                   <div>
-                    <div style={{ fontSize: '13px', color: 'white' }}>
-                      {user.username}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#a78bfa' }}>
-                      🏆 {user.wins || 0}
-                    </div>
+                    <div style={{ fontSize: '13px', color: 'white' }}>{userName}</div>
+                    <div style={{ fontSize: '11px', color: '#a78bfa' }}>🏆 {userWins}</div>
                   </div>
                 </div>
 
@@ -211,7 +205,6 @@ export default function Header() {
                 )}
               </div>
 
-              {/* PLAY BUTTON */}
               <button
                 onClick={() => setShowCreateModal(true)}
                 style={{

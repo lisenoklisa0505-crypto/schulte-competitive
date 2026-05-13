@@ -1,29 +1,47 @@
-'use client';
+"use client";
 
-import { useParams, useRouter } from 'next/navigation';
-import { trpc } from '@/trpc/client';
-import GameBoard from '@/components/GameBoard';
+import { useParams } from "next/navigation";
+import { useSession } from "@/lib/auth-client";
+import GameBoard from "@/components/GameBoard";
 
 export default function GamePage() {
   const params = useParams();
-  const router = useRouter();
-  const gameId = params?.id as string;
-  const { data: user } = trpc.auth.me.useQuery();
+  const gameId = params.id as string;
+  const { data: session, isPending } = useSession();
 
-  if (!user) {
-    router.push('/');
-    return null;
-  }
-
-  if (gameId && user) {
+  if (isPending) {
     return (
-      <GameBoard
-        sessionId={parseInt(gameId)}
-        userId={user.id}
-        playerColor="#FF6B6B"
-      />
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-white text-xl">Загрузка...</div>
+      </div>
     );
   }
 
-  return null;
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-white text-xl">Пожалуйста, войдите в аккаунт</div>
+      </div>
+    );
+  }
+
+  const userIdNumber = parseInt(session.user.id);
+  
+  if (isNaN(userIdNumber)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-red-500 text-xl">Ошибка: некорректный ID пользователя</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <GameBoard
+        sessionId={parseInt(gameId)}
+        userId={userIdNumber}
+        playerColor="#FF6B6B"
+      />
+    </div>
+  );
 }

@@ -2,34 +2,36 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { trpc } from '@/trpc/client';
+import { signIn } from '@/lib/auth-client';
 
 export default function LoginForm() {
   const router = useRouter();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
-  const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: (data) => {
-      if (data.token) {
-        localStorage.setItem('token', data.token);
-        router.push('/');
-      }
-      setIsLoading(false);
-    },
-    onError: (error) => {
-      setError(error.message);
-      setIsLoading(false);
-    },
-  });
-  
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    loginMutation.mutate({ username, password });
+    
+    try {
+      const result = await signIn.email({
+        email,
+        password,
+      });
+      
+      if (result.error) {
+        setError(result.error.message || 'Ошибка входа');
+        setIsLoading(false);
+      } else {
+        router.push('/');
+      }
+    } catch (err) {
+      setError('Ошибка соединения');
+      setIsLoading(false);
+    }
   };
   
   return (
@@ -41,10 +43,10 @@ export default function LoginForm() {
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '20px' }}>
             <input
-              type="text"
-              placeholder="Никнейм"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               style={{ width: '100%', padding: '12px', borderRadius: '10px', background: '#1a1f33', border: '1px solid #2a2f45', color: 'white' }}
               required
             />

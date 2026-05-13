@@ -1,44 +1,49 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { trpc } from '@/trpc/client';
+import { useSession } from '@/lib/auth-client';
 import Header from '@/components/Header';
 
 interface Player {
-  id: number;
-  username: string;
+  id: string;
+  name: string;
   wins: number;
   bestTime: number;
 }
 
 export default function RatingPage() {
-  const { data: user } = trpc.auth.me.useQuery();
-  const { data: leaderboardData } = trpc.game.getLeaderboard.useQuery();
+  const { data: session } = useSession();
   const [players, setPlayers] = useState<Player[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (leaderboardData && Array.isArray(leaderboardData)) {
-      const sorted = [...leaderboardData]
-        .map((p: any) => ({
-          id: p.id,
-          username: p.username,
-          wins: p.wins ?? 0,
-          bestTime: p.bestTime ?? 0,
-        }))
-        .sort((a, b) => (b.wins || 0) - (a.wins || 0));
-      setPlayers(sorted);
-    }
-  }, [leaderboardData]);
+    const fetchLeaderboard = async () => {
+      try {
+        const response = await fetch('/api/leaderboard');
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setPlayers(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch leaderboard:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const formatTime = (seconds: number) => {
-    if (!seconds || seconds === 0) return '—';
-    return `${seconds.toFixed(1)} сек`;
+    fetchLeaderboard();
+  }, []);
+
+  const formatTime = (ms: number) => {
+    if (!ms || ms === 0) return '—';
+    const seconds = ms / 1000;
+    return `${seconds.toFixed(2)} сек`;
   };
 
   const getMedal = (index: number) => {
-    if (index === 0) return '👑';
-    if (index === 1) return '👑';
-    if (index === 2) return '👑';
+    if (index === 0) return '🥇';
+    if (index === 1) return '🥈';
+    if (index === 2) return '🥉';
     return `${index + 1}`;
   };
 
@@ -49,15 +54,13 @@ export default function RatingPage() {
     return 'white';
   };
 
-  if (!user) {
+  if (isLoading) {
     return (
       <div className="rating-page">
         <Header />
-        <div style={{ maxWidth: '1200px', margin: '60px auto', padding: '0 24px', textAlign: 'center', position: 'relative', zIndex: 1 }}>
-          <p style={{ color: '#9ca3af' }}>Загрузка...</p>
+        <div style={{ maxWidth: '1200px', margin: '60px auto', padding: '0 24px', textAlign: 'center' }}>
+          <p style={{ color: '#9ca3af' }}>Загрузка рейтинга...</p>
         </div>
-
-        <style jsx>{styles}</style>
       </div>
     );
   }
@@ -67,7 +70,7 @@ export default function RatingPage() {
       <Header />
       
       <div style={{ maxWidth: '1200px', margin: '40px auto', padding: '0 24px', position: 'relative', zIndex: 1 }}>
-        <h1 style={{ fontSize: '32px', marginBottom: '8px' }}>Рейтинг игроков</h1>
+        <h1 style={{ fontSize: '32px', marginBottom: '8px', color: 'white' }}>Рейтинг игроков</h1>
         <p style={{ color: '#9ca3af', marginBottom: '32px' }}>Соревнуйтесь и поднимайтесь в таблице лидеров</p>
 
         <div style={{ 
@@ -93,7 +96,7 @@ export default function RatingPage() {
           </div>
           
           {players.map((player, index) => {
-            const isCurrentUser = user?.id === player.id;
+            const isCurrentUser = session?.user?.id === player.id;
             
             return (
               <div 
@@ -129,11 +132,11 @@ export default function RatingPage() {
                     fontSize: '18px',
                     color: 'white'
                   }}>
-                    {player.username[0].toUpperCase()}
+                    {player.name[0].toUpperCase()}
                   </div>
                   <div>
-                    <div style={{ fontSize: '18px', fontWeight: '600', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {player.username}
+                    <div style={{ fontSize: '18px', fontWeight: '600', display: 'flex', gap: '8px', flexWrap: 'wrap', color: 'white' }}>
+                      {player.name}
                       {isCurrentUser && (
                         <span style={{ 
                           fontSize: '12px', 
@@ -166,34 +169,32 @@ export default function RatingPage() {
         </div>
       </div>
 
-      <style jsx>{styles}</style>
+      <style jsx>{`
+        .rating-page {
+          min-height: 100vh;
+          position: relative;
+          overflow: hidden;
+          background: radial-gradient(circle at 20% 20%, #1a1f33, transparent 40%),
+                      radial-gradient(circle at 80% 30%, #2a2f45, transparent 40%),
+                      #0b0f1a;
+        }
+
+        .rating-page::before {
+          content: "";
+          position: absolute;
+          width: 200%;
+          height: 200%;
+          background-image: radial-gradient(white 1px, transparent 1px);
+          background-size: 40px 40px;
+          opacity: 0.05;
+          animation: starsMove 60s linear infinite;
+        }
+
+        @keyframes starsMove {
+          from { transform: translate(0, 0); }
+          to { transform: translate(-200px, -200px); }
+        }
+      `}</style>
     </div>
   );
 }
-
-const styles = `
-.rating-page {
-  min-height: 100vh;
-  position: relative;
-  overflow: hidden;
-  background: radial-gradient(circle at 20% 20%, #1a1f33, transparent 40%),
-              radial-gradient(circle at 80% 30%, #2a2f45, transparent 40%),
-              #0b0f1a;
-}
-
-.rating-page::before {
-  content: "";
-  position: absolute;
-  width: 200%;
-  height: 200%;
-  background-image: radial-gradient(white 1px, transparent 1px);
-  background-size: 40px 40px;
-  opacity: 0.05;
-  animation: starsMove 60s linear infinite;
-}
-
-@keyframes starsMove {
-  from { transform: translate(0, 0); }
-  to { transform: translate(-200px, -200px); }
-}
-`;

@@ -1,30 +1,33 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { trpc } from '@/trpc/client';
+import { useSession } from '@/lib/auth-client';
 import Header from '@/components/Header';
 import { useState } from 'react';
 
 export default function LobbyPage() {
   const router = useRouter();
-  const { data: user } = trpc.auth.me.useQuery();
+  const { data: session } = useSession();
   const [gameCode, setGameCode] = useState('');
   const [withBot, setWithBot] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   
-  const createGame = trpc.game.createGame.useMutation();
-  const startBotGame = trpc.game.startBotGame.useMutation();
+  const userName = session?.user?.name || session?.user?.email?.split('@')[0] || 'Гость';
 
   const handleCreateGame = async () => {
     setIsCreating(true);
     try {
-      let result;
-      if (withBot) {
-        result = await startBotGame.mutateAsync();
+      const response = await fetch('/api/game/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ withBot, maxPlayers: 4 }),
+      });
+      const data = await response.json();
+      if (data.sessionId) {
+        router.push(`/game/${data.sessionId}`);
       } else {
-        result = await createGame.mutateAsync({ maxPlayers: 4, withBot: false });
+        alert('Ошибка создания игры');
       }
-      router.push(`/game/${result.sessionId}`);
     } catch (error) {
       console.error('Create game error:', error);
       alert('Ошибка создания игры');
@@ -44,10 +47,9 @@ export default function LobbyPage() {
       <Header />
       <div style={{ maxWidth: '600px', margin: '60px auto', padding: '0 24px' }}>
         <div style={{ background: '#101528', borderRadius: '20px', padding: '48px', textAlign: 'center', border: '1px solid #1f2540' }}>
-          <h1 style={{ fontSize: '28px', marginBottom: '16px' }}>
-            Добро пожаловать, <span style={{ color: '#6a5cff' }}>{user?.username}</span>!
+          <h1 style={{ fontSize: '28px', marginBottom: '16px', color: 'white' }}>
+            Добро пожаловать, <span style={{ color: '#6a5cff' }}>{userName}</span>!
           </h1>
-          <p style={{ color: '#a78bfa', fontSize: '18px', marginBottom: '32px' }}>⭐ Рейтинг: {user?.rating}</p>
           
           <div style={{ marginBottom: '24px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', cursor: 'pointer' }}>

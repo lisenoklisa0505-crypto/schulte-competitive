@@ -36,6 +36,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
 
   const state = stateRaw as any;
 
+  // Таймер
   useEffect(() => {
     if (gameStatus === 'active') {
       timerRef.current = setInterval(() => {
@@ -54,7 +55,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     return `${secs} сек`;
   };
 
-  // SOCKET
+  // Socket.IO
   useEffect(() => {
     const newSocket = io({
       path: '/socket.io/',
@@ -85,7 +86,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     };
   }, [sessionId, router, refetch]);
 
-  // EXIT
+  // Выход из игры
   const handleExit = async () => {
     if (hasCleanedUp) return;
     setHasCleanedUp(true);
@@ -106,6 +107,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     router.push('/rooms');
   };
 
+  // Обновление состояния из БД
   useEffect(() => {
     if (state?.players) setPlayers(state.players);
     if (state?.takenNumbers) setTakenNumbers(state.takenNumbers);
@@ -113,6 +115,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     if (state?.winnerId !== winner) setWinner(state?.winnerId);
   }, [state]);
 
+  // Обработка клика по ячейке
   const handleCellClick = async (number: number) => {
     if (myMoves.has(number)) return;
     if (takenNumbers[number]) return;
@@ -135,7 +138,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     }
   };
 
-  // Bot interval
+  // Бот
   useEffect(() => {
     const hasBot = players?.some((p: any) => p.isBot);
     if (hasBot && gameStatus === 'active') {
@@ -147,6 +150,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     }
   }, [players, gameStatus, sessionId, makeBotMove, refetch]);
 
+  // Проверка данных
   if (!state || !state.table) {
     return (
       <div style={{ minHeight: '100vh', background: '#0b0f1a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -198,18 +202,29 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
         <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr 250px', gap: '24px' }}>
           {/* Left Panel - Players */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '20px' }}>
-            <h3>Игроки</h3>
+            <h3 style={{ marginBottom: '16px', color: 'white' }}>Игроки</h3>
             {players?.map((player: any, idx: number) => (
-              <div key={idx} style={{ padding: '12px', borderRadius: '12px', marginTop: '12px', background: player.userId === userId ? 'rgba(106,92,255,0.1)' : '#0b0f1a', border: player.userId === userId ? '1px solid #6a5cff' : '1px solid #1f2540' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: player.color }}></div>
-                  <span>
+              <div
+                key={idx}
+                style={{
+                  padding: '12px',
+                  borderRadius: '12px',
+                  marginTop: '12px',
+                  background: player.userId === userId ? 'rgba(106,92,255,0.1)' : '#0b0f1a',
+                  border: player.userId === userId ? '1px solid #6a5cff' : '1px solid #1f2540'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                  <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: player.color }} />
+                  <span style={{ color: 'white' }}>
                     {player.userId === userId ? 'Вы' : player.isBot ? '🤖 Бот' : `Игрок ${player.userId}`}
-                    {player.order === 0 && !player.isBot && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#fbbf24' }}>👑 Хост</span>}
+                    {player.order === 0 && !player.isBot && (
+                      <span style={{ marginLeft: '8px', fontSize: '11px', color: '#fbbf24' }}>👑 Хост</span>
+                    )}
                   </span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '13px' }}>
-                  <span>Ошибок: {player.errors}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#9ca3af' }}>
+                  <span>Ошибок: {player.errors || 0}</span>
                   <span>Прогресс: {player.progress || 0}/25</span>
                 </div>
               </div>
@@ -225,7 +240,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
-                {table.map((row: number[], i: number) => 
+                {table.map((row: number[], i: number) =>
                   row.map((num: number, j: number) => {
                     const cellColor = takenNumbers[num];
                     const isCurrent = num === currentNumber;
@@ -264,17 +279,17 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
           {/* Right Panel - Info */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '20px' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div>Ваш прогресс</div>
-              <div style={{ fontSize: '36px', fontWeight: 'bold' }}>{myMoves.size}/25</div>
+              <div style={{ color: '#9ca3af' }}>Ваш прогресс</div>
+              <div style={{ fontSize: '36px', fontWeight: 'bold', color: 'white' }}>{myMoves.size}/25</div>
             </div>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div>Следующее число</div>
+              <div style={{ color: '#9ca3af' }}>Следующее число</div>
               <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#a78bfa' }}>
                 {gameStatus === 'active' ? currentNumber : '—'}
               </div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div>Ошибок</div>
+              <div style={{ color: '#9ca3af' }}>Ошибок</div>
               <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#ef4444' }}>{currentPlayer?.errors || 0}</div>
             </div>
           </div>
@@ -282,7 +297,26 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
 
         {/* Exit Button */}
         <div style={{ marginTop: '24px', textAlign: 'center' }}>
-          <button onClick={handleExit} style={{ padding: '10px 24px', borderRadius: '10px', background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', cursor: 'pointer' }}>
+          <button
+            onClick={handleExit}
+            style={{
+              padding: '10px 24px',
+              borderRadius: '10px',
+              background: 'transparent',
+              border: '1px solid #ef4444',
+              color: '#ef4444',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#ef4444';
+              e.currentTarget.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.color = '#ef4444';
+            }}
+          >
             Выйти из комнаты
           </button>
         </div>
@@ -290,21 +324,37 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
         {/* Winner Modal */}
         {isFinished && winner && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-            <div style={{ background: '#101528', padding: '40px', borderRadius: '20px', textAlign: 'center' }}>
+            <div style={{ background: '#101528', padding: '40px', borderRadius: '20px', textAlign: 'center', maxWidth: '400px', width: '90%' }}>
               {winner === userId ? (
                 <>
-                  <div style={{ fontSize: '64px' }}>🏆</div>
-                  <h2>Вы победили!</h2>
-                  <p>Время: {formatTime(timeElapsed)}</p>
+                  <div style={{ fontSize: '64px', marginBottom: '16px' }}>🏆</div>
+                  <h2 style={{ color: 'white', marginBottom: '8px' }}>Вы победили!</h2>
+                  <p style={{ color: '#fbbf24', marginBottom: '16px' }}>Время: {formatTime(timeElapsed)}</p>
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: '64px' }}>💔</div>
-                  <h2>Игра окончена</h2>
-                  <p>Победил: {winner === -1 ? 'Бот' : `Игрок ${winner}`}</p>
+                  <div style={{ fontSize: '64px', marginBottom: '16px' }}>💔</div>
+                  <h2 style={{ color: 'white', marginBottom: '8px' }}>Игра окончена</h2>
+                  <p style={{ color: '#fbbf24', marginBottom: '16px' }}>Победил: {winner === -1 ? 'Бот' : `Игрок ${winner}`}</p>
                 </>
               )}
-              <button onClick={handleExit} style={{ marginTop: '20px', padding: '10px 20px', background: '#6a5cff', border: 'none', borderRadius: '10px', color: 'white', cursor: 'pointer' }}>В меню</button>
+              <button
+                onClick={handleExit}
+                style={{
+                  marginTop: '20px',
+                  padding: '10px 20px',
+                  background: '#6a5cff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#4f8cff'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#6a5cff'}
+              >
+                В меню
+              </button>
             </div>
           </div>
         )}
