@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { httpBatchLink } from '@trpc/client';
-import { useState } from 'react';
-import { trpc } from '@/trpc/client';
+import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { httpBatchLink } from "@trpc/client";
+import { trpc } from "@/trpc/client";
+import superjson from "superjson";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -11,15 +12,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     trpc.createClient({
       links: [
         httpBatchLink({
-          url: '/api/trpc',
-          headers() {
-            const token = localStorage.getItem('token');
-            return {
-              Authorization: token ? `Bearer ${token}` : '',
-            };
-          },
+          url: "/api/trpc",
         }),
       ],
+      transformer: superjson,
     })
   );
 

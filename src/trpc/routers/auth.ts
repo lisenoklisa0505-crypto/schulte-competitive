@@ -12,7 +12,7 @@ export const authRouter = router({
       const existing = await db.select().from(users).where(eq(users.username, input.username));
       
       if (existing.length) {
-        throw new Error('User exists');
+        throw new Error('Пользователь с таким именем уже существует');
       }
       
       const hashed = await hashPassword(input.password);
@@ -40,10 +40,10 @@ export const authRouter = router({
     .input(z.object({ username: z.string(), password: z.string() }))
     .mutation(async ({ input }) => {
       const usersList = await db.select().from(users).where(eq(users.username, input.username));
-      if (!usersList.length) throw new Error('User not found');
+      if (!usersList.length) throw new Error('Пользователь не найден');
       
       const valid = await verifyPassword(input.password, usersList[0].password);
-      if (!valid) throw new Error('Invalid password');
+      if (!valid) throw new Error('Неверный пароль');
       
       const token = generateJWT(usersList[0].id, input.username);
       
@@ -63,7 +63,7 @@ export const authRouter = router({
   me: protectedProcedure
     .query(async ({ ctx }) => {
       const usersList = await db.select().from(users).where(eq(users.id, ctx.user.userId));
-      if (!usersList.length) throw new Error('User not found');
+      if (!usersList.length) throw new Error('Пользователь не найден');
       return { 
         id: usersList[0].id, 
         username: usersList[0].username, 

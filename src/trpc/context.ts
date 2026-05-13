@@ -1,29 +1,22 @@
-import { inferAsyncReturnType } from '@trpc/server';
-import { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
-import { db } from '@/db';
-import { verifyJWT } from '@/lib/auth';
+import { auth } from "@/lib/auth";
+import { verifyJWT } from "@/lib/auth";
 
-export async function createContext({ req }: FetchCreateContextFnOptions) {
-  // Получаем токен из cookies
-  const cookieHeader = req.headers.get('cookie');
-  let token = '';
+export async function createContext({ req }: { req: Request }) {
+  const token = req.headers.get("authorization")?.replace("Bearer ", "");
+  let user = null;
   
-  if (cookieHeader) {
-    const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
-      const [name, value] = cookie.trim().split('=');
-      acc[name] = value;
-      return acc;
-    }, {} as Record<string, string>);
-    token = cookies['token'] || '';
+  if (token) {
+    user = verifyJWT(token);
   }
   
-  const user = token ? await verifyJWT(token) : null;
-  
-  return {
-    db,
-    user,
-    req,
-  };
+  try {
+    const session = await auth.api.getSession({
+      headers: req.headers,
+    });
+    return { session, user, headers: req.headers };
+  } catch {
+    return { session: null, user, headers: req.headers };
+  }
 }
 
-export type Context = inferAsyncReturnType<typeof createContext>;
+export type Context = Awaited<ReturnType<typeof createContext>>;

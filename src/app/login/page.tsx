@@ -28,7 +28,7 @@ export default function LoginPage() {
     loginMutation.mutate({ username, password });
   };
 
-  const isLoading = loginMutation.status === 'pending';
+  const isLoading = loginMutation.status === 'loading';
 
   return (
     <div className="page">
