@@ -1,6 +1,6 @@
 import { pgTable, serial, text, timestamp, integer, jsonb, boolean, doublePrecision } from 'drizzle-orm/pg-core';
 
-// ========== ТАБЛИЦА ДЛЯ BETTER-AUTH ==========
+// ========== ТАБЛИЦЫ ДЛЯ BETTER-AUTH ==========
 export const users = pgTable("user", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
