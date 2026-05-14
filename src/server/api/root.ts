@@ -42,13 +42,13 @@ const gameRouter = router({
       password: z.string().optional()
     }))
     .mutation(async ({ input, ctx }) => {
-      // ВРЕМЕННО: возвращаем фиктивный sessionId
+      // Временно возвращаем mock-данные
       return { sessionId: Math.floor(Math.random() * 10000) };
     }),
 
   startBotGame: protectedProcedure
     .mutation(async ({ ctx }) => {
-      // ВРЕМЕННО: возвращаем фиктивный sessionId
+      // Временно возвращаем mock-данные
       return { sessionId: Math.floor(Math.random() * 10000) };
     }),
 

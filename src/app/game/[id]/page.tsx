@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
@@ -25,21 +25,14 @@ export default function GamePage() {
     );
   }
 
-  const userIdNumber = parseInt(session.user.id);
-  
-  if (isNaN(userIdNumber)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-red-500 text-xl">Ошибка: некорректный ID пользователя</div>
-      </div>
-    );
-  }
+  // ID теперь строка
+  const userId = session.user.id;
 
   return (
     <div className="min-h-screen bg-background">
       <GameBoard
         sessionId={parseInt(gameId)}
-        userId={userIdNumber}
+        userId={userId}
         playerColor="#FF6B6B"
       />
     </div>
