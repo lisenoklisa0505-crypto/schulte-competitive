@@ -22,20 +22,16 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   });
 });
 
-// ========== AUTH ROUTER ==========
 const authRouter = router({
   me: publicProcedure.query(async ({ ctx }) => {
     return ctx.session?.user || null;
   }),
 });
 
-// ========== GAME ROUTER ==========
 const gameRouter = router({
   hello: publicProcedure
     .input(z.object({ name: z.string() }))
-    .query(({ input }) => {
-      return { message: `Hello ${input.name}` };
-    }),
+    .query(({ input }) => ({ message: `Hello ${input.name}` })),
 
   createGame: protectedProcedure
     .input(z.object({ 
@@ -54,11 +50,10 @@ const gameRouter = router({
         name: input.name || `Комната ${Date.now()}`,
         isPrivate: input.isPrivate || false,
         password: input.isPrivate ? input.password : null,
+        maxPlayers: input.maxPlayers,
       }).returning();
       
-      if (!newSession) {
-        throw new Error('Не удалось создать игровую сессию');
-      }
+      if (!newSession) throw new Error('Не удалось создать игровую сессию');
       
       await db.insert(gamePlayers).values({
         sessionId: newSession.id,
@@ -70,6 +65,38 @@ const gameRouter = router({
       return { sessionId: newSession.id };
     }),
 
+  joinGame: protectedProcedure
+    .input(z.object({ sessionId: z.number(), password: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
+      if (!session) throw new Error('Game not found');
+      if (session.status !== 'waiting') throw new Error('Game already started');
+      if (session.isPrivate && session.password !== input.password) throw new Error('Неверный пароль');
+      
+      const players = await db.select().from(gamePlayers).where(eq(gamePlayers.sessionId, input.sessionId));
+      const alreadyInGame = players.some(p => p.userId === ctx.session.user.id);
+      if (alreadyInGame) throw new Error('Вы уже в этой игре');
+      
+      const humanPlayers = players.filter(p => p.userId !== 'bot');
+      if (humanPlayers.length >= (session.maxPlayers || 4)) throw new Error('Game is full');
+      
+      await db.insert(gamePlayers).values({
+        sessionId: input.sessionId,
+        userId: ctx.session.user.id,
+        color: (session.maxPlayers === 2 ? '#4ECDC4' : '#45B7D1'),
+        order: players.length,
+      });
+      
+      const updatedPlayers = await db.select().from(gamePlayers).where(eq(gamePlayers.sessionId, input.sessionId));
+      const updatedHumanPlayers = updatedPlayers.filter(p => p.userId !== 'bot');
+      
+      if (updatedHumanPlayers.length >= (session.maxPlayers || 4)) {
+        await db.update(gameSessions).set({ status: 'active' }).where(eq(gameSessions.id, input.sessionId));
+      }
+      
+      return { success: true };
+    }),
+
   startBotGame: protectedProcedure
     .mutation(async ({ ctx }) => {
       const tableData = generateSchulteTable(5);
@@ -79,11 +106,10 @@ const gameRouter = router({
         status: 'active',
         name: 'Игра с ботом',
         isPrivate: false,
+        maxPlayers: 2,
       }).returning();
       
-      if (!newSession) {
-        throw new Error('Не удалось создать игру с ботом');
-      }
+      if (!newSession) throw new Error('Не удалось создать игру с ботом');
       
       await db.insert(gamePlayers).values({
         sessionId: newSession.id,
@@ -107,14 +133,7 @@ const gameRouter = router({
     .query(async ({ input }) => {
       const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
       if (!session) {
-        return {
-          table: [],
-          status: 'waiting',
-          winnerId: null,
-          players: [],
-          takenNumbers: {},
-          currentNumber: 1,
-        };
+        return { table: [], status: 'waiting', winnerId: null, players: [], takenNumbers: {}, currentNumber: 1 };
       }
       
       const players = await db.select().from(gamePlayers).where(eq(gamePlayers.sessionId, input.sessionId));
@@ -163,19 +182,27 @@ const gameRouter = router({
             name: gameSessions.name,
             status: gameSessions.status,
             isPrivate: gameSessions.isPrivate,
+            maxPlayers: gameSessions.maxPlayers,
           })
           .from(gameSessions)
           .where(eq(gameSessions.status, 'waiting'))
           .orderBy(desc(gameSessions.createdAt));
         
-        return sessions.map(s => ({
-          id: s.id,
-          name: s.name || `Комната ${s.id}`,
-          players: 1,
-          maxPlayers: 4,
-          status: s.status,
-          isPrivate: s.isPrivate || false,
-        }));
+        const sessionsWithPlayers = await Promise.all(
+          sessions.map(async (s) => {
+            const players = await db.select().from(gamePlayers).where(eq(gamePlayers.sessionId, s.id));
+            return {
+              id: s.id,
+              name: s.name || `Комната ${s.id}`,
+              players: players.length,
+              maxPlayers: s.maxPlayers || 4,
+              status: s.status,
+              isPrivate: s.isPrivate || false,
+            };
+          })
+        );
+        
+        return sessionsWithPlayers;
       } catch (error) {
         console.error('getActiveSessions error:', error);
         return [];
@@ -204,7 +231,6 @@ const gameRouter = router({
     }),
 });
 
-// ========== USER ROUTER ==========
 const userRouter = router({
   getUser: protectedProcedure
     .input(z.object({ id: z.string() }))
@@ -213,7 +239,6 @@ const userRouter = router({
     }),
 });
 
-// ========== MAIN APP ROUTER ==========
 export const appRouter = router({
   auth: authRouter,
   game: gameRouter,

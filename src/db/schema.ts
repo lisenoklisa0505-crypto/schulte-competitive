@@ -18,7 +18,7 @@ export const users = pgTable("user", {
 
 export const accounts = pgTable("account", {
   id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(), // ← ДОБАВЛЕНО!
+  accountId: text("account_id").notNull(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   providerId: text("provider_id").notNull(),
   providerUserId: text("provider_user_id"),
@@ -56,6 +56,7 @@ export const gameSessions = pgTable("game_sessions", {
   name: text("name").default(""),
   isPrivate: boolean("is_private").default(false),
   password: text("password"),
+  maxPlayers: integer("max_players").default(4), // ← ДОБАВЛЕНО!
   createdAt: timestamp("created_at").defaultNow(),
   finishedAt: timestamp("finished_at"),
 });

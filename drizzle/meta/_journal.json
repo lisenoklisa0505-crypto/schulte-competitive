@@ -8,6 +8,13 @@
       "when": 1778693086737,
       "tag": "0000_faulty_shriek",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778772502429,
+      "tag": "0001_dear_moon_knight",
+      "breakpoints": true
     }
   ]
 }
