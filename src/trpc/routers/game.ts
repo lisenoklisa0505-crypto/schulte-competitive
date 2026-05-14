@@ -18,6 +18,7 @@ export const gameRouter = router({
       password: z.string().optional()
     }))
     .mutation(async ({ input, ctx }) => {
+      // Проверка на активную игру
       const activeSession = await db
         .select()
         .from(gameSessions)
@@ -28,28 +29,37 @@ export const gameRouter = router({
         throw new Error('У вас уже есть активная игра. Завершите её или выйдите.');
       }
       
-      const table = generateSchulteTable(5);
-      const session = await db.insert(gameSessions).values({
-        tableData: table,
+      // Генерация таблицы
+      const tableData = generateSchulteTable(5);
+      
+      // Создание сессии
+      const [newSession] = await db.insert(gameSessions).values({
+        tableData: tableData,
         status: 'waiting',
         name: input.name || `Комната ${Date.now()}`,
         isPrivate: input.isPrivate || false,
         password: input.isPrivate ? input.password : null,
       }).returning();
       
+      if (!newSession) {
+        throw new Error('Не удалось создать игровую сессию');
+      }
+      
+      // Добавление игрока (хост)
       await db.insert(gamePlayers).values({
-        sessionId: session[0].id,
+        sessionId: newSession.id,
         userId: ctx.user.id,
         color: colors[0],
         order: 0,
       });
       
-      return { sessionId: session[0].id, table };
+      return { sessionId: newSession.id };
     }),
   
   // Игра с ботом
   startBotGame: protectedProcedure
     .mutation(async ({ ctx }) => {
+      // Проверка на активную игру
       const activeSession = await db
         .select()
         .from(gameSessions)
@@ -60,41 +70,49 @@ export const gameRouter = router({
         throw new Error('У вас уже есть активная игра. Завершите её или выйдите.');
       }
       
-      const table = generateSchulteTable(5);
+      // Генерация таблицы
+      const tableData = generateSchulteTable(5);
       
-      const session = await db.insert(gameSessions).values({
-        tableData: table,
+      // Создание сессии
+      const [newSession] = await db.insert(gameSessions).values({
+        tableData: tableData,
         status: 'active',
         name: 'Игра с ботом',
         isPrivate: false,
       }).returning();
       
+      if (!newSession) {
+        throw new Error('Не удалось создать игру с ботом');
+      }
+      
+      // Добавление игрока
       await db.insert(gamePlayers).values({
-        sessionId: session[0].id,
+        sessionId: newSession.id,
         userId: ctx.user.id,
         color: colors[0],
         order: 0,
       });
       
+      // Добавление бота
       await db.insert(gamePlayers).values({
-        sessionId: session[0].id,
+        sessionId: newSession.id,
         userId: 'bot',
         color: colors[1],
         order: 1,
       });
       
-      return { sessionId: session[0].id, table };
+      return { sessionId: newSession.id };
     }),
   
   // Присоединение к игре
   joinGame: protectedProcedure
     .input(z.object({ sessionId: z.number(), password: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      const session = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
-      if (!session.length) throw new Error('Game not found');
-      if (session[0].status !== 'waiting') throw new Error('Game already started');
+      const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
+      if (!session) throw new Error('Game not found');
+      if (session.status !== 'waiting') throw new Error('Game already started');
       
-      if (session[0].isPrivate && session[0].password !== input.password) {
+      if (session.isPrivate && session.password !== input.password) {
         throw new Error('Неверный пароль');
       }
       
@@ -129,14 +147,14 @@ export const gameRouter = router({
       return { success: true };
     }),
   
-  // Выход из игры (передача хоста или удаление комнаты)
+  // Выход из игры
   exitGame: protectedProcedure
     .input(z.object({ sessionId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const session = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
-      if (!session.length) throw new Error('Game not found');
+      const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
+      if (!session) throw new Error('Game not found');
       
-      if (session[0].status === 'finished') {
+      if (session.status === 'finished') {
         return { success: true };
       }
       
@@ -144,7 +162,7 @@ export const gameRouter = router({
       const currentPlayer = players.find(p => p.userId === ctx.user.id);
       if (!currentPlayer) throw new Error('Not a player');
       
-      if (session[0].status === 'waiting') {
+      if (session.status === 'waiting') {
         const isHost = currentPlayer.order === 0;
         
         await db.delete(gamePlayers).where(eq(gamePlayers.id, currentPlayer.id));
@@ -171,9 +189,9 @@ export const gameRouter = router({
         return { success: true, roomDeleted: false };
       }
       
-      if (session[0].status === 'active') {
+      if (session.status === 'active') {
         const finishedAt = new Date();
-        const startTime = session[0].createdAt;
+        const startTime = session.createdAt;
         const duration = Math.floor((finishedAt.getTime() - new Date(startTime!).getTime()) / 1000);
         
         const otherPlayers = players.filter(p => p.userId !== ctx.user.id && p.userId !== 'bot');
@@ -181,8 +199,8 @@ export const gameRouter = router({
         
         if (otherPlayers.length > 0) {
           winnerId = otherPlayers[0].userId;
-          const winnerStats = await db.select().from(users).where(eq(users.id, winnerId));
-          const currentWins = (winnerStats[0]?.wins || 0) + 1;
+          const [winnerStats] = await db.select().from(users).where(eq(users.id, winnerId));
+          const currentWins = (winnerStats?.wins || 0) + 1;
           await db.update(users).set({ wins: currentWins }).where(eq(users.id, winnerId));
         } else {
           winnerId = 'bot';
@@ -218,10 +236,10 @@ export const gameRouter = router({
   deleteRoom: protectedProcedure
     .input(z.object({ sessionId: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const session = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
-      if (!session.length) throw new Error('Game not found');
+      const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
+      if (!session) throw new Error('Game not found');
       
-      if (session[0].status !== 'waiting') {
+      if (session.status !== 'waiting') {
         throw new Error('Игра уже началась, нельзя удалить комнату');
       }
       
@@ -262,10 +280,10 @@ export const gameRouter = router({
   makeMove: protectedProcedure
     .input(z.object({ sessionId: z.number(), number: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      const session = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
-      if (!session.length) throw new Error('Game not found');
+      const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
+      if (!session) throw new Error('Game not found');
       
-      if (session[0].status === 'finished') {
+      if (session.status === 'finished') {
         return { valid: false, message: 'Игра уже закончена' };
       }
       
@@ -332,7 +350,7 @@ export const gameRouter = router({
       
       if (totalValidMoves.length === 25) {
         const finishedAt = new Date();
-        const startTime = session[0].createdAt;
+        const startTime = session.createdAt;
         const duration = Math.floor((finishedAt.getTime() - new Date(startTime!).getTime()) / 1000);
         
         const playersMovesCount = new Map<string, number>();
@@ -358,9 +376,9 @@ export const gameRouter = router({
         }).where(eq(gameSessions.id, input.sessionId));
         
         if (winnerId !== 'bot') {
-          const userStats = await db.select().from(users).where(eq(users.id, winnerId));
-          const currentWins = (userStats[0]?.wins || 0) + 1;
-          const currentBestTime = userStats[0]?.bestTime || duration;
+          const [userStats] = await db.select().from(users).where(eq(users.id, winnerId));
+          const currentWins = (userStats?.wins || 0) + 1;
+          const currentBestTime = userStats?.bestTime || duration;
           const newBestTime = duration < currentBestTime ? duration : currentBestTime;
           
           await db.update(users).set({ 
@@ -393,8 +411,8 @@ export const gameRouter = router({
   makeBotMove: protectedProcedure
     .input(z.object({ sessionId: z.number() }))
     .mutation(async ({ input }) => {
-      const session = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
-      if (!session.length || session[0].status !== 'active') return { success: false };
+      const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
+      if (!session || session.status !== 'active') return { success: false };
       
       const allValidMoves = await db.select().from(gameMoves)
         .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
@@ -425,12 +443,12 @@ export const gameRouter = router({
       });
       
       if (!isValid) {
-        const botPlayer = await db.select().from(gamePlayers)
+        const [botPlayer] = await db.select().from(gamePlayers)
           .where(and(eq(gamePlayers.sessionId, input.sessionId), eq(gamePlayers.userId, 'bot')));
         
-        if (botPlayer.length) {
-          await db.update(gamePlayers).set({ errors: (botPlayer[0].errors || 0) + 1 })
-            .where(eq(gamePlayers.id, botPlayer[0].id));
+        if (botPlayer) {
+          await db.update(gamePlayers).set({ errors: (botPlayer.errors || 0) + 1 })
+            .where(eq(gamePlayers.id, botPlayer.id));
         }
       }
       
@@ -440,7 +458,7 @@ export const gameRouter = router({
       if (totalValidMoves.length === 25) {
         const players = await db.select().from(gamePlayers).where(eq(gamePlayers.sessionId, input.sessionId));
         const finishedAt = new Date();
-        const startTime = session[0].createdAt;
+        const startTime = session.createdAt;
         const duration = Math.floor((finishedAt.getTime() - new Date(startTime!).getTime()) / 1000);
         
         const playersMovesCount = new Map<string, number>();
@@ -465,9 +483,9 @@ export const gameRouter = router({
         }).where(eq(gameSessions.id, input.sessionId));
         
         if (winnerId !== 'bot') {
-          const userStats = await db.select().from(users).where(eq(users.id, winnerId));
-          const currentWins = (userStats[0]?.wins || 0) + 1;
-          const currentBestTime = userStats[0]?.bestTime || duration;
+          const [userStats] = await db.select().from(users).where(eq(users.id, winnerId));
+          const currentWins = (userStats?.wins || 0) + 1;
+          const currentBestTime = userStats?.bestTime || duration;
           const newBestTime = duration < currentBestTime ? duration : currentBestTime;
           
           await db.update(users).set({ 
@@ -500,8 +518,8 @@ export const gameRouter = router({
   getGameState: protectedProcedure
     .input(z.object({ sessionId: z.number() }))
     .query(async ({ input }) => {
-      const session = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
-      if (!session.length) throw new Error('Game not found');
+      const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
+      if (!session) throw new Error('Game not found');
       
       const players = await db.select().from(gamePlayers).where(eq(gamePlayers.sessionId, input.sessionId));
       const moves = await db.select().from(gameMoves).where(eq(gameMoves.sessionId, input.sessionId));
@@ -524,9 +542,9 @@ export const gameRouter = router({
       const currentNumber = moves.filter(m => m.isValid).length + 1;
       
       return {
-        table: session[0].tableData,
-        status: session[0].status,
-        winnerId: session[0].winnerId,
+        table: session.tableData,
+        status: session.status,
+        winnerId: session.winnerId,
         players: players.map(p => ({
           userId: p.userId,
           isBot: p.userId === 'bot',
