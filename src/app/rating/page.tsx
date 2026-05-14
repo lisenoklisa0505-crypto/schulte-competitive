@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { useSession } from '@/lib/auth-client';
 import Header from '@/components/Header';
@@ -111,11 +113,7 @@ export default function RatingPage() {
                   borderLeft: isCurrentUser ? '3px solid #6a5cff' : 'none'
                 }}
               >
-                <div style={{ 
-                  fontSize: index < 3 ? '28px' : '18px', 
-                  fontWeight: 'bold', 
-                  color: getRankColor(index)
-                }}>
+                <div style={{ fontSize: index < 3 ? '28px' : '18px', fontWeight: 'bold', color: getRankColor(index) }}>
                   {getMedal(index)}
                 </div>
                 
@@ -138,13 +136,7 @@ export default function RatingPage() {
                     <div style={{ fontSize: '18px', fontWeight: '600', display: 'flex', gap: '8px', flexWrap: 'wrap', color: 'white' }}>
                       {player.name}
                       {isCurrentUser && (
-                        <span style={{ 
-                          fontSize: '12px', 
-                          padding: '2px 10px', 
-                          background: '#6a5cff', 
-                          borderRadius: '20px', 
-                          color: 'white' 
-                        }}>
+                        <span style={{ fontSize: '12px', padding: '2px 10px', background: '#6a5cff', borderRadius: '20px', color: 'white' }}>
                           Вы
                         </span>
                       )}
@@ -178,7 +170,6 @@ export default function RatingPage() {
                       radial-gradient(circle at 80% 30%, #2a2f45, transparent 40%),
                       #0b0f1a;
         }
-
         .rating-page::before {
           content: "";
           position: absolute;
@@ -189,7 +180,6 @@ export default function RatingPage() {
           opacity: 0.05;
           animation: starsMove 60s linear infinite;
         }
-
         @keyframes starsMove {
           from { transform: translate(0, 0); }
           to { transform: translate(-200px, -200px); }

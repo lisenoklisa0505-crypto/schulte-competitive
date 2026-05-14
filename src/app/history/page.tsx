@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { trpc } from '@/trpc/client';
@@ -123,11 +125,7 @@ export default function HistoryPage() {
                       #0b0f1a;
           color: white;
         }
-        .container {
-          max-width: 1300px;
-          margin: 40px auto;
-          padding: 0 24px;
-        }
+        .container { max-width: 1300px; margin: 40px auto; padding: 0 24px; }
         h1 { font-size: 32px; margin-bottom: 6px; }
         .sub { color: #9ca3af; margin-bottom: 30px; }
         .layout { display: grid; grid-template-columns: 1fr 320px; gap: 24px; }

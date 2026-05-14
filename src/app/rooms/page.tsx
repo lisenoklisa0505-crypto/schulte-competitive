@@ -1,11 +1,12 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/trpc/client';
 import Header from '@/components/Header';
 import CreateGameModal from '@/components/CreateGameModal';
-import io from 'socket.io-client';
 
 interface Room {
   id: number;
@@ -18,29 +19,12 @@ interface Room {
 export default function RoomsPage() {
   const router = useRouter();
   const { data: user, isLoading } = trpc.auth.me.useQuery();
-  const { data: activeSessions, refetch } = trpc.game.getActiveSessions.useQuery();
+  const { data: activeSessions, refetch } = trpc.game.getActiveSessions.useQuery(undefined, {
+    refetchInterval: 5000,
+  });
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
-
-  // SOCKET - реальное время
-  useEffect(() => {
-    const socket = io({
-      path: '/socket.io/',
-    });
-
-    socket.on('room-deleted', ({ sessionId }: { sessionId: number }) => {
-      setRooms(prev => prev.filter(r => r.id !== sessionId));
-    });
-
-    socket.on('room-updated', () => {
-      refetch();
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [refetch]);
 
   useEffect(() => {
     if (activeSessions && Array.isArray(activeSessions)) {
@@ -80,7 +64,10 @@ export default function RoomsPage() {
 
   return (
     <>
-      <CreateGameModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
+      <CreateGameModal isOpen={showCreateModal} onClose={() => {
+        setShowCreateModal(false);
+        refetch();
+      }} />
 
       <div className="rooms-page">
         <Header />
@@ -138,7 +125,6 @@ export default function RoomsPage() {
           position: relative;
           overflow: hidden;
         }
-
         .rooms-page::before {
           content: "";
           position: absolute;
@@ -149,12 +135,10 @@ export default function RoomsPage() {
           opacity: 0.05;
           animation: starsMove 60s linear infinite;
         }
-
         @keyframes starsMove {
           from { transform: translate(0, 0); }
           to { transform: translate(-200px, -200px); }
         }
-
         .rooms-container {
           max-width: 1200px;
           margin: 60px auto;
@@ -162,21 +146,9 @@ export default function RoomsPage() {
           position: relative;
           z-index: 1;
         }
-
-        .rooms-header {
-          margin-bottom: 32px;
-        }
-
-        .rooms-header h1 {
-          font-size: 32px;
-          margin-bottom: 8px;
-          color: white;
-        }
-
-        .rooms-header p {
-          color: #9ca3af;
-        }
-
+        .rooms-header { margin-bottom: 32px; }
+        .rooms-header h1 { font-size: 32px; margin-bottom: 8px; color: white; }
+        .rooms-header p { color: #9ca3af; }
         .create-room-btn {
           margin-bottom: 32px;
           padding: 12px 28px;
@@ -189,18 +161,11 @@ export default function RoomsPage() {
           box-shadow: 0 0 15px rgba(106,92,255,0.6);
           transition: all 0.2s;
         }
-
         .create-room-btn:hover {
           transform: translateY(-2px);
           box-shadow: 0 0 25px rgba(106,92,255,0.8);
         }
-
-        .rooms-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-          gap: 24px;
-        }
-
+        .rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; }
         .room-card {
           background: #101528;
           border-radius: 20px;
@@ -209,90 +174,24 @@ export default function RoomsPage() {
           transition: all 0.3s;
           cursor: pointer;
         }
-
         .room-card:hover {
           transform: translateY(-5px);
           border-color: #6a5cff;
           box-shadow: 0 0 20px rgba(106,92,255,0.2);
         }
-
-        .room-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 12px;
-        }
-
-        .room-name {
-          font-size: 18px;
-          font-weight: 600;
-          color: white;
-        }
-
-        .room-status {
-          font-size: 12px;
-          padding: 4px 10px;
-          border-radius: 20px;
-        }
-
-        .room-status.free {
-          background: rgba(16, 185, 129, 0.2);
-          color: #10b981;
-        }
-
-        .room-status.full {
-          background: rgba(239, 68, 68, 0.2);
-          color: #ef4444;
-        }
-
-        .room-players {
-          font-size: 14px;
-          color: #9ca3af;
-          margin-bottom: 16px;
-        }
-
-        .room-footer {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .room-privacy {
-          font-size: 12px;
-          padding: 4px 10px;
-          border-radius: 20px;
-        }
-
-        .room-privacy.public {
-          background: rgba(16, 185, 129, 0.2);
-          color: #10b981;
-        }
-
-        .room-privacy.private {
-          background: rgba(239, 68, 68, 0.2);
-          color: #ef4444;
-        }
-
-        .room-join {
-          font-size: 14px;
-          color: #a78bfa;
-          font-weight: 500;
-        }
-
-        .empty-rooms {
-          grid-column: 1 / -1;
-          text-align: center;
-          padding: 60px;
-          background: #101528;
-          border-radius: 20px;
-          color: #9ca3af;
-        }
-
-        @media (max-width: 900px) {
-          .rooms-grid {
-            grid-template-columns: 1fr;
-          }
-        }
+        .room-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .room-name { font-size: 18px; font-weight: 600; color: white; }
+        .room-status { font-size: 12px; padding: 4px 10px; border-radius: 20px; }
+        .room-status.free { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+        .room-status.full { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .room-players { font-size: 14px; color: #9ca3af; margin-bottom: 16px; }
+        .room-footer { display: flex; justify-content: space-between; align-items: center; }
+        .room-privacy { font-size: 12px; padding: 4px 10px; border-radius: 20px; }
+        .room-privacy.public { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+        .room-privacy.private { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .room-join { font-size: 14px; color: #a78bfa; font-weight: 500; }
+        .empty-rooms { grid-column: 1 / -1; text-align: center; padding: 60px; background: #101528; border-radius: 20px; color: #9ca3af; }
+        @media (max-width: 900px) { .rooms-grid { grid-template-columns: 1fr; } }
       `}</style>
     </>
   );

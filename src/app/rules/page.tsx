@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import Header from '@/components/Header';
 
 export default function RulesPage() {
@@ -7,7 +9,7 @@ export default function RulesPage() {
     { icon: '🎯', title: 'Цель игры', text: 'Найти числа от 1 до 25 по порядку быстрее остальных игроков.' },
     { icon: '🧠', title: 'Игровое поле', text: 'Таблица 5×5 с перемешанными числами генерируется случайно для каждой игры.' },
     { icon: '👥', title: 'Мультиплеер', text: 'Все игроки видят одинаковое поле в реальном времени.' },
-    { icon: '⚡', title: 'Механика', text: 'Первый игрок, выбравший число, “забирает” его для всех.' },
+    { icon: '⚡', title: 'Механика', text: 'Первый игрок, выбравший число, "забирает" его для всех.' },
     { icon: '🏆', title: 'Победа', text: 'Побеждает тот, кто первым завершит всю последовательность.' },
     { icon: '📊', title: 'Рейтинг', text: 'Место зависит от количества побед в матчах.' }
   ];
@@ -16,7 +18,6 @@ export default function RulesPage() {
     <div className="page">
       <Header />
 
-      {/* КОСМИЧЕСКИЙ ФОН */}
       <div className="background" />
 
       <div className="container">
@@ -46,8 +47,6 @@ export default function RulesPage() {
           position: relative;
           overflow: hidden;
         }
-
-        /* 🌌 ФОН */
         .background {
           position: fixed;
           inset: 0;
@@ -57,7 +56,6 @@ export default function RulesPage() {
             radial-gradient(circle at 80% 30%, #2a2f45, transparent 40%),
             #0b0f1a;
         }
-
         .background::before {
           content: "";
           position: absolute;
@@ -68,12 +66,10 @@ export default function RulesPage() {
           opacity: 0.05;
           animation: starsMove 80s linear infinite;
         }
-
         @keyframes starsMove {
           from { transform: translate(0, 0); }
           to { transform: translate(-200px, -200px); }
         }
-
         .container {
           max-width: 1200px;
           margin: 40px auto;
@@ -81,28 +77,14 @@ export default function RulesPage() {
           position: relative;
           z-index: 1;
         }
-
         .hero {
           text-align: center;
           margin-bottom: 40px;
           margin-top: 40px;
         }
-
-        h1 {
-          font-size: 42px;
-          margin-bottom: 8px;
-        }
-
-        .hero p {
-          color: #9ca3af;
-        }
-
-        .rules-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 20px;
-        }
-
+        h1 { font-size: 42px; margin-bottom: 8px; }
+        .hero p { color: #9ca3af; }
+        .rules-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
         .card {
           background: rgba(16, 21, 40, 0.75);
           backdrop-filter: blur(12px);
@@ -111,28 +93,10 @@ export default function RulesPage() {
           padding: 24px;
           transition: 0.25s;
         }
-
-        .card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 0 25px rgba(106,92,255,0.25);
-        }
-
-        .icon {
-          font-size: 36px;
-          margin-bottom: 12px;
-        }
-
-        h3 {
-          margin-bottom: 8px;
-          color: white;
-          font-size: 20px;
-        }
-
-        p {
-          color: #9ca3af;
-          line-height: 1.5;
-        }
-
+        .card:hover { transform: translateY(-5px); box-shadow: 0 0 25px rgba(106,92,255,0.25); }
+        .icon { font-size: 36px; margin-bottom: 12px; }
+        h3 { margin-bottom: 8px; color: white; font-size: 20px; }
+        p { color: #9ca3af; line-height: 1.5; }
         .tip {
           margin-top: 30px;
           padding: 20px;
@@ -142,12 +106,7 @@ export default function RulesPage() {
           color: #d1d5db;
           text-align: center;
         }
-
-        @media (max-width: 800px) {
-          .rules-grid {
-            grid-template-columns: 1fr;
-          }
-        }
+        @media (max-width: 800px) { .rules-grid { grid-template-columns: 1fr; } }
       `}</style>
     </div>
   );

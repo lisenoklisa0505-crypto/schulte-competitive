@@ -2,15 +2,19 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  output: 'standalone',
   experimental: {
     serverComponentsExternalPackages: ['drizzle-orm', 'better-auth', 'pg'],
   },
-  webpack: (config) => {
-    config.externals.push({
-      'utf-8-validate': 'commonjs utf-8-validate',
-      'bufferutil': 'commonjs bufferutil',
-    });
-    return config;
+  // Отключаем статическую генерацию для всех страниц
+  staticPageGenerationTimeout: 120,
+  compiler: {
+    // Убираем оптимизации для клиентских компонентов
+    styledComponents: true,
+  },
+  // Делаем все страницы динамическими
+  generateBuildId: async () => {
+    return 'build-' + Date.now();
   },
 };
 

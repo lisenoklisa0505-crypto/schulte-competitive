@@ -1,40 +1,27 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import GameBoard from "@/components/GameBoard";
 
 export default function GamePage() {
   const params = useParams();
-  const gameId = params.id as string;
-  const { data: session, isPending } = useSession();
-
-  if (isPending) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-white text-xl">Загрузка...</div>
-      </div>
-    );
+  const sessionId = Number(params.id);
+  const { data: session } = useSession();
+  
+  const playerColor = '#FF6B6B';
+  
+  if (!session?.user) {
+    return <div style={{ minHeight: '100vh', background: '#0b0f1a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>Загрузка...</div>;
   }
-
-  if (!session) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-white text-xl">Пожалуйста, войдите в аккаунт</div>
-      </div>
-    );
-  }
-
-  // ID теперь строка
-  const userId = session.user.id;
-
+  
   return (
-    <div className="min-h-screen bg-background">
-      <GameBoard
-        sessionId={parseInt(gameId)}
-        userId={userId}
-        playerColor="#FF6B6B"
-      />
-    </div>
+    <GameBoard
+      sessionId={sessionId}
+      userId={session.user.id}
+      playerColor={playerColor}
+    />
   );
 }
