@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "ws": "node server.js",
+    "dev:all": "concurrently \"npm run ws\" \"npm run dev\""
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.6.9",
