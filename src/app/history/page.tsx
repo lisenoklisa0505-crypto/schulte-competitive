@@ -7,6 +7,13 @@ import { useSession } from '@/lib/auth-client';
 import { trpc } from '@/trpc/client';
 import Header from '@/components/Header';
 
+interface LeaderboardPlayer {
+  id: string;
+  username: string;
+  wins: number;
+  bestTime: number;
+}
+
 export default function HistoryPage() {
   const { data: session } = useSession();
   const { data: historyData, isLoading } = trpc.game.getMatchHistory.useQuery(undefined, {
@@ -23,8 +30,9 @@ export default function HistoryPage() {
     losses: 0,
     bestTime: 0,
   });
-  const [topPlayers, setTopPlayers] = useState<any[]>([]);
-  const [userRank, setUserRank] = useState<{ position: number; wins: number } | null>(null);
+  const [topPlayers, setTopPlayers] = useState<LeaderboardPlayer[]>([]);
+  const [userRank, setUserRank] = useState<{ position: number; wins: number; username: string } | null>(null);
+  const [isUserInTop, setIsUserInTop] = useState(false);
 
   useEffect(() => {
     if (historyData && Array.isArray(historyData)) {
@@ -32,39 +40,53 @@ export default function HistoryPage() {
       
       const wins = historyData.filter((m: any) => m.winnerId === session?.user?.id).length;
       const losses = historyData.length - wins;
-      const bestTime = Math.min(...historyData.map((m: any) => m.duration || Infinity), Infinity);
+      const validTimes = historyData.filter((m: any) => m.duration && m.duration > 0).map((m: any) => m.duration);
+      const bestTime = validTimes.length > 0 ? Math.min(...validTimes) : 0;
       
       setStats({
         total: historyData.length,
         wins,
         losses,
-        bestTime: bestTime === Infinity ? 0 : bestTime,
+        bestTime,
       });
     }
   }, [historyData, session?.user?.id]);
 
   useEffect(() => {
-    if (leaderboard && Array.isArray(leaderboard)) {
-      setTopPlayers(leaderboard.slice(0, 3));
+    if (leaderboard && Array.isArray(leaderboard) && session?.user) {
+      const top3 = leaderboard.slice(0, 3);
+      setTopPlayers(top3);
       
-      const userIndex = leaderboard.findIndex((p: any) => p.id === session?.user?.id);
+      const userInTop3 = top3.some((p: any) => p.id === session.user.id);
+      setIsUserInTop(userInTop3);
+      
+      const userIndex = leaderboard.findIndex((p: any) => p.id === session.user.id);
       if (userIndex !== -1) {
         setUserRank({
           position: userIndex + 1,
           wins: leaderboard[userIndex].wins,
+          username: leaderboard[userIndex].username || 'Вы',
+        });
+      } else {
+        setUserRank({
+          position: leaderboard.length + 1,
+          wins: 0,
+          username: 'Вы',
         });
       }
     }
-  }, [leaderboard, session?.user?.id]);
+  }, [leaderboard, session?.user]);
 
   const formatDuration = (seconds: number) => {
-    if (!seconds) return '—';
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s} сек`;
+    if (!seconds || seconds === 0) return '—';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) return `${mins} мин ${secs} сек`;
+    return `${secs} сек`;
   };
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '—';
     return new Date(dateStr).toLocaleString('ru-RU', {
       day: '2-digit',
       month: 'short',
@@ -133,32 +155,57 @@ export default function HistoryPage() {
             <div className="card">
               <h3>Статистика</h3>
               <div className="grid">
-                <Stat label="Матчи" value={stats.total} />
-                <Stat label="Победы" value={stats.wins} />
-                <Stat label="Поражения" value={stats.losses} />
-                <Stat label="Лучшее" value={formatDuration(stats.bestTime)} />
+                <div className="stat">
+                  <div className="v">{stats.total}</div>
+                  <div className="l">Матчи</div>
+                </div>
+                <div className="stat">
+                  <div className="v">{stats.wins}</div>
+                  <div className="l">Победы</div>
+                </div>
+                <div className="stat">
+                  <div className="v">{stats.losses}</div>
+                  <div className="l">Поражения</div>
+                </div>
+                <div className="stat">
+                  <div className="v">{formatDuration(stats.bestTime)}</div>
+                  <div className="l">Лучшее</div>
+                </div>
               </div>
             </div>
 
             <div className="card rating-card">
-              <h3>🏆 Топ игроков</h3>
+              <h3>🏆 Рейтинг игроков</h3>
+              
               <div className="top-players">
-                {topPlayers.map((player, idx) => (
-                  <div key={player.id} className="top-player">
-                    <span className="medal">{getMedal(idx)}</span>
-                    <span className="name">{player.username || player.name || 'Игрок'}</span>
-                    <span className="wins">{player.wins}🏆</span>
-                  </div>
-                ))}
+                {topPlayers.map((player, idx) => {
+                  const isCurrentUser = player.id === session?.user?.id;
+                  return (
+                    <div key={player.id} className={`top-player ${isCurrentUser ? 'current-user' : ''}`}>
+                      <span className="medal">{getMedal(idx)}</span>
+                      <span className="name">{player.username || 'Игрок'}</span>
+                      <span className="wins">{player.wins} 🏆</span>
+                    </div>
+                  );
+                })}
               </div>
               
-              {userRank && (
+              {!isUserInTop && userRank && (
                 <div className="user-rank">
+                  <div className="rank-line">
+                    <span className="medal">#{userRank.position}</span>
+                    <span className="name">{userRank.username}</span>
+                    <span className="wins">{userRank.wins} 🏆</span>
+                  </div>
+                </div>
+              )}
+              
+              {isUserInTop && userRank && (
+                <div className="user-in-top">
                   <div className="rank-line">
                     <span>📌 Ваше место</span>
                     <span className="rank-number">#{userRank.position}</span>
                   </div>
-                  <div className="rank-wins">Побед: {userRank.wins}</div>
                 </div>
               )}
             </div>
@@ -181,7 +228,7 @@ export default function HistoryPage() {
         .table { background: #101528; border-radius: 18px; border: 1px solid #1f2540; overflow: hidden; }
         .head, .row {
           display: grid;
-          grid-template-columns: 170px 1fr 120px 100px 100px;
+          grid-template-columns: 150px 1fr 100px 80px 80px;
           padding: 14px 18px;
           align-items: center;
         }
@@ -199,7 +246,7 @@ export default function HistoryPage() {
         .stat .v { font-size: 20px; font-weight: 700; }
         .stat .l { font-size: 11px; color: #9ca3af; }
         
-        .top-players { margin-bottom: 16px; }
+        .top-players { margin-bottom: 12px; }
         .top-player {
           display: flex;
           align-items: center;
@@ -208,36 +255,39 @@ export default function HistoryPage() {
           border-bottom: 1px solid #1f2540;
         }
         .top-player:last-child { border-bottom: none; }
-        .medal { font-size: 24px; width: 40px; }
+        .top-player.current-user {
+          background: rgba(106,92,255,0.15);
+          margin: 0 -8px;
+          padding: 10px 8px;
+          border-radius: 10px;
+        }
+        .medal { font-size: 20px; width: 36px; font-weight: bold; }
         .name { flex: 1; font-size: 14px; color: white; }
-        .wins { color: #fbbf24; font-weight: bold; }
+        .wins { color: #fbbf24; font-weight: bold; font-size: 14px; }
         
         .user-rank {
-          margin-top: 12px;
+          margin-top: 8px;
           padding-top: 12px;
           border-top: 1px solid #6a5cff;
-          background: rgba(106,92,255,0.1);
+          background: rgba(106,92,255,0.08);
           border-radius: 12px;
+          padding: 12px;
+        }
+        .user-in-top {
+          margin-top: 8px;
+          padding-top: 12px;
+          border-top: 1px solid #6a5cff;
+          text-align: center;
           padding: 12px;
         }
         .rank-line {
           display: flex;
           justify-content: space-between;
+          align-items: center;
           font-size: 14px;
-          margin-bottom: 8px;
         }
-        .rank-number { color: #6a5cff; font-weight: bold; font-size: 18px; }
-        .rank-wins { font-size: 12px; color: #9ca3af; }
+        .rank-number { color: #6a5cff; font-weight: bold; font-size: 16px; }
       `}</style>
-    </div>
-  );
-}
-
-function Stat({ label, value }: any) {
-  return (
-    <div className="stat">
-      <div className="v">{value}</div>
-      <div className="l">{label}</div>
     </div>
   );
 }

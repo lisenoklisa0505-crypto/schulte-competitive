@@ -4,42 +4,43 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { useSession } from '@/lib/auth-client';
+import { trpc } from '@/trpc/client';
 import Header from '@/components/Header';
 
 interface Player {
   id: string;
-  name: string;
+  username: string;
   wins: number;
   bestTime: number;
 }
 
 export default function RatingPage() {
   const { data: session } = useSession();
+  const { data: leaderboard, refetch } = trpc.game.getLeaderboard.useQuery(undefined, {
+    enabled: !!session,
+    refetchInterval: 5000,
+  });
+
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchLeaderboard = async () => {
-      try {
-        const response = await fetch('/api/leaderboard');
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          setPlayers(data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch leaderboard:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    if (leaderboard && Array.isArray(leaderboard)) {
+      setPlayers(leaderboard);
+      setIsLoading(false);
+    }
+  }, [leaderboard]);
 
-    fetchLeaderboard();
-  }, []);
-
-  const formatTime = (ms: number) => {
-    if (!ms || ms === 0) return '—';
-    const seconds = ms / 1000;
-    return `${seconds.toFixed(2)} сек`;
+  const formatTime = (seconds: number) => {
+    if (!seconds || seconds === 0) return '—';
+    let secs = seconds;
+    if (seconds > 60) {
+      secs = Math.floor(seconds / 1000);
+    }
+    const mins = Math.floor(secs / 60);
+    const remainingSecs = secs % 60;
+    if (mins > 0) return `${mins} мин ${remainingSecs} сек`;
+    return `${secs} сек`;
   };
 
   const getMedal = (index: number) => {
@@ -99,6 +100,9 @@ export default function RatingPage() {
           
           {players.map((player, index) => {
             const isCurrentUser = session?.user?.id === player.id;
+            const displayName = player.username || 'Игрок';
+            const wins = player.wins || 0;
+            const bestTime = player.bestTime || 0;
             
             return (
               <div 
@@ -113,7 +117,14 @@ export default function RatingPage() {
                   borderLeft: isCurrentUser ? '3px solid #6a5cff' : 'none'
                 }}
               >
-                <div style={{ fontSize: index < 3 ? '28px' : '18px', fontWeight: 'bold', color: getRankColor(index) }}>
+                <div style={{ 
+                  fontSize: index < 3 ? '28px' : '18px', 
+                  fontWeight: 'bold', 
+                  color: getRankColor(index),
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
                   {getMedal(index)}
                 </div>
                 
@@ -130,13 +141,19 @@ export default function RatingPage() {
                     fontSize: '18px',
                     color: 'white'
                   }}>
-                    {player.name[0].toUpperCase()}
+                    {displayName[0]?.toUpperCase() || '?'}
                   </div>
                   <div>
-                    <div style={{ fontSize: '18px', fontWeight: '600', display: 'flex', gap: '8px', flexWrap: 'wrap', color: 'white' }}>
-                      {player.name}
+                    <div style={{ fontSize: '18px', fontWeight: '600', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', color: 'white' }}>
+                      {displayName}
                       {isCurrentUser && (
-                        <span style={{ fontSize: '12px', padding: '2px 10px', background: '#6a5cff', borderRadius: '20px', color: 'white' }}>
+                        <span style={{ 
+                          fontSize: '11px', 
+                          padding: '2px 10px', 
+                          background: '#6a5cff', 
+                          borderRadius: '20px', 
+                          color: 'white' 
+                        }}>
                           Вы
                         </span>
                       )}
@@ -146,18 +163,24 @@ export default function RatingPage() {
                 
                 <div>
                   <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '18px' }}>
-                    {player.wins || 0}
+                    {wins}
                   </span>
                 </div>
                 
                 <div>
                   <span style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '16px' }}>
-                    {formatTime(player.bestTime)}
+                    {formatTime(bestTime)}
                   </span>
                 </div>
               </div>
             );
           })}
+
+          {players.length === 0 && (
+            <div style={{ padding: '60px', textAlign: 'center', color: '#9ca3af' }}>
+              Нет игроков в рейтинге
+            </div>
+          )}
         </div>
       </div>
 

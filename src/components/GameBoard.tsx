@@ -25,10 +25,11 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
   const [currentNumber, setCurrentNumber] = useState(1);
   const [myErrors, setMyErrors] = useState(0);
   const [myProgress, setMyProgress] = useState(0);
+  const [isBotThinking, setIsBotThinking] = useState(false);
 
   const { data: stateRaw, refetch } = trpc.game.getGameState.useQuery(
     { sessionId },
-    { refetchInterval: 200 } // Ускорено с 500 до 200 мс
+    { refetchInterval: 100 } // Быстрое обновление 100 мс
   );
 
   const makeMove = trpc.game.makeMove.useMutation();
@@ -93,22 +94,21 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     router.push('/rooms');
   };
 
-  // Обработка клика по ячейке с оптимистичным обновлением
+  // Обработка клика по ячейке с оптимистичным обновлением (мгновенно)
   const handleCellClick = async (number: number) => {
     if (myMoves.has(number)) return;
     if (takenNumbers[number]) return;
     if (gameStatus !== 'active') return;
+    if (currentNumber !== number) return; // Только нужное число
 
     // Оптимистичное обновление - мгновенная реакция
     setMyMoves(prev => new Set(prev).add(number));
     setTakenNumbers(prev => ({ ...prev, [number]: playerColor }));
+    setMyProgress(prev => prev + 1);
     
     try {
       const result = await makeMove.mutateAsync({ sessionId, number });
-      if (result.valid) {
-        setMyProgress(prev => prev + 1);
-        refetch();
-      } else {
+      if (!result.valid && result.message) {
         // Откат при ошибке
         setMyMoves(prev => {
           const newSet = new Set(prev);
@@ -120,10 +120,10 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
           delete newObj[number];
           return newObj;
         });
-        if ((result as any).message) {
-          alert((result as any).message);
-        }
+        setMyProgress(prev => prev - 1);
+        alert(result.message);
       }
+      refetch();
     } catch (err) {
       // Откат при ошибке
       setMyMoves(prev => {
@@ -136,21 +136,30 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
         delete newObj[number];
         return newObj;
       });
+      setMyProgress(prev => prev - 1);
       console.error('Move error:', err);
     }
   };
 
-  // Бот - ускоренный
+  // Бот - быстрый и стабильный
   useEffect(() => {
     const hasBot = players?.some((p: any) => p.isBot);
-    if (hasBot && gameStatus === 'active') {
-      const interval = setInterval(() => {
-        makeBotMove.mutate({ sessionId });
-        refetch();
-      }, 800 + Math.random() * 700); // Ускорено с 1500-2500 до 800-1500 мс
-      return () => clearInterval(interval);
+    if (hasBot && gameStatus === 'active' && !winner && !isBotThinking) {
+      const timer = setTimeout(() => {
+        setIsBotThinking(true);
+        makeBotMove.mutate({ sessionId }, {
+          onSuccess: () => {
+            refetch();
+            setIsBotThinking(false);
+          },
+          onError: () => {
+            setIsBotThinking(false);
+          }
+        });
+      }, 600); // Задержка 600 мс для естественности
+      return () => clearTimeout(timer);
     }
-  }, [players, gameStatus, sessionId, makeBotMove, refetch]);
+  }, [players, gameStatus, sessionId, makeBotMove, refetch, winner, currentNumber, isBotThinking]);
 
   // Проверка загрузки
   if (!grid || grid.length === 0) {
@@ -171,6 +180,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
       <Header />
 
       <div style={{ maxWidth: '1200px', margin: '40px auto', padding: '0 24px' }}>
+        {/* Game Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
           <div>
             <div style={{ color: '#9ca3af' }}>Комната #{sessionId}</div>
@@ -201,7 +211,9 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
           </div>
         </div>
 
+        {/* Game Layout */}
         <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr 250px', gap: '24px' }}>
+          {/* Left Panel - Players */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '20px' }}>
             <h3 style={{ marginBottom: '16px', color: 'white' }}>Игроки</h3>
             {players.map((player: any, idx: number) => {
@@ -230,8 +242,12 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
                 </div>
               );
             })}
+            {players.length === 0 && (
+              <div style={{ color: '#9ca3af', textAlign: 'center', padding: '20px' }}>Нет игроков</div>
+            )}
           </div>
 
+          {/* Center - Game Grid */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '24px' }}>
             {waitingForPlayers ? (
               <div style={{ textAlign: 'center', padding: '60px', color: '#9ca3af' }}>
@@ -242,7 +258,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
               <div style={{ textAlign: 'center', padding: '60px' }}>
                 <div style={{ fontSize: '64px', marginBottom: '16px' }}>🏆</div>
                 <h2 style={{ color: 'white', marginBottom: '8px' }}>
-                  {String(winner) === String(userId) ? 'Вы победили!' : `Победил: ${winner === 'bot' ? 'Бот' : winner}`}
+                  {String(winner) === String(userId) ? 'Вы победили!' : `Победил: ${winner === 'bot' ? 'Бот' : winner.slice(0, 8)}`}
                 </h2>
                 <p style={{ color: '#fbbf24', marginBottom: '16px' }}>Время: {formatTime(timeElapsed)}</p>
                 <button
@@ -287,10 +303,11 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
                         fontSize: '20px',
                         fontWeight: 'bold',
                         color: cellColor ? 'white' : '#E8EAFF',
-                        border: isCurrent && !cellColor && gameStatus === 'active' ? '2px solid #F5A623' : '1px solid #2a2f45',
+                        border: isCurrent && !cellColor && gameStatus === 'active' ? '3px solid #F5A623' : '1px solid #2a2f45',
                         cursor: isDisabled ? 'not-allowed' : 'pointer',
                         opacity: isDisabled ? 0.6 : 1,
-                        boxShadow: isCurrent && !cellColor && gameStatus === 'active' ? '0 0 10px rgba(245,166,35,0.5)' : 'none'
+                        boxShadow: isCurrent && !cellColor && gameStatus === 'active' ? '0 0 15px rgba(245,166,35,0.6)' : 'none',
+                        transition: 'all 0.05s ease',
                       }}
                     >
                       {num}
@@ -301,6 +318,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
             )}
           </div>
 
+          {/* Right Panel - Info */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '20px' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <div style={{ color: '#9ca3af' }}>Ваш прогресс</div>
