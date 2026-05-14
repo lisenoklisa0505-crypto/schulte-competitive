@@ -1,6 +1,5 @@
 import { pgTable, serial, text, timestamp, integer, jsonb, boolean, doublePrecision } from 'drizzle-orm/pg-core';
 
-// ========== ТАБЛИЦЫ ДЛЯ BETTER-AUTH ==========
 export const users = pgTable("user", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
@@ -47,7 +46,6 @@ export const verifications = pgTable("verification", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// ========== ИГРОВЫЕ ТАБЛИЦЫ ==========
 export const gameSessions = pgTable("game_sessions", {
   id: serial("id").primaryKey(),
   tableData: jsonb("table_data").notNull(),
@@ -56,7 +54,7 @@ export const gameSessions = pgTable("game_sessions", {
   name: text("name").default(""),
   isPrivate: boolean("is_private").default(false),
   password: text("password"),
-  maxPlayers: integer("max_players").default(4), // ← ДОБАВЛЕНО!
+  maxPlayers: integer("max_players").default(4),
   createdAt: timestamp("created_at").defaultNow(),
   finishedAt: timestamp("finished_at"),
 });
@@ -64,7 +62,9 @@ export const gameSessions = pgTable("game_sessions", {
 export const gamePlayers = pgTable("game_players", {
   id: serial("id").primaryKey(),
   sessionId: integer("session_id").notNull().references(() => gameSessions.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id"),
+  isBot: boolean("is_bot").default(false),
+  name: text("name"),
   color: text("color").notNull(),
   completedAt: timestamp("completed_at"),
   errors: integer("errors").default(0),
@@ -74,7 +74,7 @@ export const gamePlayers = pgTable("game_players", {
 export const gameMoves = pgTable("game_moves", {
   id: serial("id").primaryKey(),
   sessionId: integer("session_id").notNull().references(() => gameSessions.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
   number: integer("number").notNull(),
   timestamp: timestamp("timestamp").defaultNow(),
   isValid: boolean("is_valid").notNull(),

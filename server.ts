@@ -1,7 +1,7 @@
 import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
-import { initSocketServer } from './src/lib/socket-server';
+import { initSocketServer } from './src/socket-server'; // Путь к src
 
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
@@ -20,14 +20,8 @@ async function startServer() {
   
   const port = process.env.PORT || 3000;
   server.listen(port, () => {
-    console.log(`
-    ╔════════════════════════════════════════╗
-    ║     🚀 SERVER STARTED SUCCESSFULLY     ║
-    ╠════════════════════════════════════════╣
-    ║  HTTP:   http://localhost:${port}         ║
-    ║  WS:     ws://localhost:${port}/socket.io  ║
-    ╚════════════════════════════════════════╝
-    `);
+    console.log(`> Ready on http://localhost:${port}`);
+    console.log(`> Socket.IO server running on ws://localhost:${port}/socket.io`);
   });
 }
 

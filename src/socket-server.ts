@@ -5,11 +5,7 @@ export let io: Server;
 
 export function initSocketServer(server: HTTPServer) {
   io = new Server(server, {
-    cors: {
-      origin: "http://localhost:3000",
-      methods: ["GET", "POST"],
-      credentials: true,
-    },
+    cors: { origin: "*", methods: ["GET", "POST"] },
     path: '/socket.io/',
     transports: ['websocket', 'polling'],
   });
@@ -23,19 +19,12 @@ export function initSocketServer(server: HTTPServer) {
       socket.emit('joined', { sessionId, success: true });
     });
 
-    socket.on('leave-game', (sessionId: string) => {
-      socket.leave(`game:${sessionId}`);
-      console.log(`🚪 Socket ${socket.id} left game ${sessionId}`);
-    });
-
     socket.on('game-move', (data) => {
-      console.log(`🎯 Move in game ${data.sessionId}: Player ${data.userId} clicked ${data.number}`);
       io.to(`game:${data.sessionId}`).emit('game-update', {
         type: 'move',
         number: data.number,
         playerColor: data.playerColor,
         userId: data.userId,
-        playerName: data.playerName,
         timestamp: Date.now(),
       });
     });
@@ -44,6 +33,5 @@ export function initSocketServer(server: HTTPServer) {
       console.log('🔌 Client disconnected:', socket.id);
     });
   });
-
   return io;
 }
