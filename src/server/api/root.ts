@@ -2,13 +2,11 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 import type { Context } from "../context";
 
-// ========== TRPC INIT С КОНТЕКСТОМ ==========
 const t = initTRPC.context<Context>().create();
 
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
-// ========== PROTECTED PROCEDURE ==========
 export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.session) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -27,16 +25,14 @@ const authRouter = router({
   }),
 });
 
-// ========== GAME ROUTER (ПОЛНЫЙ) ==========
+// ========== GAME ROUTER ==========
 const gameRouter = router({
-  // Простой тест
   hello: publicProcedure
     .input(z.object({ name: z.string() }))
     .query(({ input }) => {
       return { message: `Hello ${input.name}` };
     }),
 
-  // Создание игры
   createGame: protectedProcedure
     .input(z.object({ 
       maxPlayers: z.number().min(2).max(4), 
@@ -46,16 +42,16 @@ const gameRouter = router({
       password: z.string().optional()
     }))
     .mutation(async ({ input, ctx }) => {
-      return { sessionId: 1 };
+      // ВРЕМЕННО: возвращаем фиктивный sessionId
+      return { sessionId: Math.floor(Math.random() * 10000) };
     }),
 
-  // Игра с ботом
   startBotGame: protectedProcedure
     .mutation(async ({ ctx }) => {
-      return { sessionId: 1 };
+      // ВРЕМЕННО: возвращаем фиктивный sessionId
+      return { sessionId: Math.floor(Math.random() * 10000) };
     }),
 
-  // Получение состояния игры
   getGameState: protectedProcedure
     .input(z.object({ sessionId: z.number() }))
     .query(async ({ input }) => {
@@ -69,40 +65,34 @@ const gameRouter = router({
       };
     }),
 
-  // Ход игрока
   makeMove: protectedProcedure
     .input(z.object({ sessionId: z.number(), number: z.number() }))
     .mutation(async ({ input, ctx }) => {
       return { valid: true, number: input.number };
     }),
 
-  // Ход бота
   makeBotMove: protectedProcedure
     .input(z.object({ sessionId: z.number() }))
     .mutation(async ({ input }) => {
       return { success: true };
     }),
 
-  // Выход из игры
   exitGame: protectedProcedure
     .input(z.object({ sessionId: z.number() }))
     .mutation(async ({ input }) => {
       return { success: true };
     }),
 
-  // Получение активных сессий
   getActiveSessions: protectedProcedure
     .query(async () => {
       return [];
     }),
 
-  // Получение истории матчей
   getMatchHistory: protectedProcedure
     .query(async () => {
       return [];
     }),
 
-  // Получение рейтинга
   getLeaderboard: protectedProcedure
     .query(async () => {
       return [];
