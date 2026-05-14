@@ -66,7 +66,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
       newSocket.emit('join-game', String(sessionId));
     });
 
-    newSocket.on('room-deleted', ({ sessionId: deletedId }) => {
+    newSocket.on('room-deleted', ({ sessionId: deletedId }: { sessionId: number }) => {
       if (deletedId === sessionId) {
         router.push('/rooms');
       }
@@ -93,7 +93,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
 
     try {
       const result = await exitGame.mutateAsync({ sessionId });
-      if (result?.roomDeleted) {
+      if ((result as any)?.roomDeleted) {
         if (socket && isConnected) {
           socket.emit('room-deleted', { sessionId });
         }
@@ -130,8 +130,8 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
           socket.emit('game-move', { sessionId, number, playerColor, userId });
         }
         refetch();
-      } else if (result.message) {
-        alert(result.message);
+      } else if ((result as any).message) {
+        alert((result as any).message);
       }
     } catch (err) {
       console.error('Move error:', err);
