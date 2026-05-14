@@ -12,6 +12,9 @@ export default function HistoryPage() {
   const { data: historyData, isLoading } = trpc.game.getMatchHistory.useQuery(undefined, {
     enabled: !!session,
   });
+  const { data: leaderboard } = trpc.game.getLeaderboard.useQuery(undefined, {
+    enabled: !!session,
+  });
 
   const [matches, setMatches] = useState<any[]>([]);
   const [stats, setStats] = useState({
@@ -20,6 +23,8 @@ export default function HistoryPage() {
     losses: 0,
     bestTime: 0,
   });
+  const [topPlayers, setTopPlayers] = useState<any[]>([]);
+  const [userRank, setUserRank] = useState<{ position: number; wins: number } | null>(null);
 
   useEffect(() => {
     if (historyData && Array.isArray(historyData)) {
@@ -38,6 +43,20 @@ export default function HistoryPage() {
     }
   }, [historyData, session?.user?.id]);
 
+  useEffect(() => {
+    if (leaderboard && Array.isArray(leaderboard)) {
+      setTopPlayers(leaderboard.slice(0, 3));
+      
+      const userIndex = leaderboard.findIndex((p: any) => p.id === session?.user?.id);
+      if (userIndex !== -1) {
+        setUserRank({
+          position: userIndex + 1,
+          wins: leaderboard[userIndex].wins,
+        });
+      }
+    }
+  }, [leaderboard, session?.user?.id]);
+
   const formatDuration = (seconds: number) => {
     if (!seconds) return '—';
     const m = Math.floor(seconds / 60);
@@ -52,6 +71,13 @@ export default function HistoryPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const getMedal = (index: number) => {
+    if (index === 0) return '🥇';
+    if (index === 1) return '🥈';
+    if (index === 2) return '🥉';
+    return `${index + 1}`;
   };
 
   if (isLoading) {
@@ -113,6 +139,29 @@ export default function HistoryPage() {
                 <Stat label="Лучшее" value={formatDuration(stats.bestTime)} />
               </div>
             </div>
+
+            <div className="card rating-card">
+              <h3>🏆 Топ игроков</h3>
+              <div className="top-players">
+                {topPlayers.map((player, idx) => (
+                  <div key={player.id} className="top-player">
+                    <span className="medal">{getMedal(idx)}</span>
+                    <span className="name">{player.username || player.name || 'Игрок'}</span>
+                    <span className="wins">{player.wins}🏆</span>
+                  </div>
+                ))}
+              </div>
+              
+              {userRank && (
+                <div className="user-rank">
+                  <div className="rank-line">
+                    <span>📌 Ваше место</span>
+                    <span className="rank-number">#{userRank.position}</span>
+                  </div>
+                  <div className="rank-wins">Побед: {userRank.wins}</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -149,6 +198,36 @@ export default function HistoryPage() {
         .stat { background: #1a1f33; padding: 12px; border-radius: 12px; text-align: center; }
         .stat .v { font-size: 20px; font-weight: 700; }
         .stat .l { font-size: 11px; color: #9ca3af; }
+        
+        .top-players { margin-bottom: 16px; }
+        .top-player {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 10px 0;
+          border-bottom: 1px solid #1f2540;
+        }
+        .top-player:last-child { border-bottom: none; }
+        .medal { font-size: 24px; width: 40px; }
+        .name { flex: 1; font-size: 14px; color: white; }
+        .wins { color: #fbbf24; font-weight: bold; }
+        
+        .user-rank {
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px solid #6a5cff;
+          background: rgba(106,92,255,0.1);
+          border-radius: 12px;
+          padding: 12px;
+        }
+        .rank-line {
+          display: flex;
+          justify-content: space-between;
+          font-size: 14px;
+          margin-bottom: 8px;
+        }
+        .rank-number { color: #6a5cff; font-weight: bold; font-size: 18px; }
+        .rank-wins { font-size: 12px; color: #9ca3af; }
       `}</style>
     </div>
   );

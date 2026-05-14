@@ -28,7 +28,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
 
   const { data: stateRaw, refetch } = trpc.game.getGameState.useQuery(
     { sessionId },
-    { refetchInterval: 500 }
+    { refetchInterval: 200 } // Ускорено с 500 до 200 мс
   );
 
   const makeMove = trpc.game.makeMove.useMutation();
@@ -85,10 +85,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     if (timerRef.current) clearInterval(timerRef.current);
 
     try {
-      const result = await exitGame.mutateAsync({ sessionId });
-      if ((result as any)?.roomDeleted) {
-        // Уведомление через API, WebSocket пока отключен
-      }
+      await exitGame.mutateAsync({ sessionId });
     } catch (err) {
       console.error('Exit error:', err);
     }
@@ -96,36 +93,61 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     router.push('/rooms');
   };
 
-  // Обработка клика по ячейке
+  // Обработка клика по ячейке с оптимистичным обновлением
   const handleCellClick = async (number: number) => {
     if (myMoves.has(number)) return;
     if (takenNumbers[number]) return;
     if (gameStatus !== 'active') return;
 
+    // Оптимистичное обновление - мгновенная реакция
+    setMyMoves(prev => new Set(prev).add(number));
+    setTakenNumbers(prev => ({ ...prev, [number]: playerColor }));
+    
     try {
       const result = await makeMove.mutateAsync({ sessionId, number });
       if (result.valid) {
-        setMyMoves(prev => new Set(prev).add(number));
         setMyProgress(prev => prev + 1);
-        setTakenNumbers(prev => ({ ...prev, [number]: playerColor }));
         refetch();
-      } else if ((result as any).message) {
-        alert((result as any).message);
-        refetch();
+      } else {
+        // Откат при ошибке
+        setMyMoves(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(number);
+          return newSet;
+        });
+        setTakenNumbers(prev => {
+          const newObj = { ...prev };
+          delete newObj[number];
+          return newObj;
+        });
+        if ((result as any).message) {
+          alert((result as any).message);
+        }
       }
     } catch (err) {
+      // Откат при ошибке
+      setMyMoves(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(number);
+        return newSet;
+      });
+      setTakenNumbers(prev => {
+        const newObj = { ...prev };
+        delete newObj[number];
+        return newObj;
+      });
       console.error('Move error:', err);
     }
   };
 
-  // Бот
+  // Бот - ускоренный
   useEffect(() => {
     const hasBot = players?.some((p: any) => p.isBot);
     if (hasBot && gameStatus === 'active') {
       const interval = setInterval(() => {
         makeBotMove.mutate({ sessionId });
         refetch();
-      }, 1500 + Math.random() * 1000);
+      }, 800 + Math.random() * 700); // Ускорено с 1500-2500 до 800-1500 мс
       return () => clearInterval(interval);
     }
   }, [players, gameStatus, sessionId, makeBotMove, refetch]);
@@ -180,7 +202,6 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr 250px', gap: '24px' }}>
-          {/* Left Panel - Players */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '20px' }}>
             <h3 style={{ marginBottom: '16px', color: 'white' }}>Игроки</h3>
             {players.map((player: any, idx: number) => {
@@ -211,7 +232,6 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
             })}
           </div>
 
-          {/* Center - Game Grid */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '24px' }}>
             {waitingForPlayers ? (
               <div style={{ textAlign: 'center', padding: '60px', color: '#9ca3af' }}>
@@ -281,7 +301,6 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
             )}
           </div>
 
-          {/* Right Panel - Info */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '20px' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <div style={{ color: '#9ca3af' }}>Ваш прогресс</div>

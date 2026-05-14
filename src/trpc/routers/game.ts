@@ -132,21 +132,35 @@ export const gameRouter = router({
     if (totalValidMoves === 25) {
       const finishedAt = new Date();
       const duration = Math.floor((finishedAt.getTime() - new Date(session.createdAt!).getTime()) / 1000);
+      
+      // Подсчет количества правильных ходов для каждого игрока
       const playersMovesCount = new Map<string, number>();
-      const allMoves = await db.select().from(gameMoves).where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
-      for (const move of allMoves) {
+      const allMovesAfter = await db.select().from(gameMoves).where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
+      for (const move of allMovesAfter) {
         playersMovesCount.set(move.userId, (playersMovesCount.get(move.userId) || 0) + 1);
       }
-      let winnerId = ctx.user.id;
-      let maxMoves = playersMovesCount.get(ctx.user.id) || 0;
+      
+      // Определяем победителя по количеству правильных ходов
+      let winnerId = 'bot';
+      let maxMoves = 0;
       for (const [playerId, movesCount] of playersMovesCount) {
-        if (movesCount > maxMoves) { maxMoves = movesCount; winnerId = playerId; }
+        if (movesCount > maxMoves) {
+          maxMoves = movesCount;
+          winnerId = playerId;
+        }
       }
+      
       await db.update(gameSessions).set({ status: 'finished', winnerId, finishedAt }).where(eq(gameSessions.id, input.sessionId));
+      
+      // Обновляем победителя в таблице users (только если победитель не бот)
       if (winnerId !== 'bot') {
         const [userStats] = await db.select().from(users).where(eq(users.id, winnerId));
-        await db.update(users).set({ wins: (userStats?.wins || 0) + 1, bestTime: duration }).where(eq(users.id, winnerId));
+        const currentWins = (userStats?.wins || 0) + 1;
+        const currentBestTime = userStats?.bestTime || duration;
+        const newBestTime = duration < currentBestTime ? duration : currentBestTime;
+        await db.update(users).set({ wins: currentWins, bestTime: newBestTime }).where(eq(users.id, winnerId));
       }
+      
       const humanPlayers = players.filter(p => !p.isBot);
       await db.insert(matchHistory).values({ sessionId: input.sessionId, players: humanPlayers.map(p => ({ id: p.userId, username: p.userId === ctx.user.id ? 'Вы' : `Игрок ${p.userId}`, color: p.color, errors: p.errors || 0, completed: true, progress: playersMovesCount.get(p.userId!) || 0 })), winnerId, duration });
     }
@@ -162,7 +176,8 @@ export const gameRouter = router({
     const existingMove = await db.select().from(gameMoves).where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.number, nextNumber), eq(gameMoves.isValid, true)));
     if (existingMove.length > 0) return { success: false };
     
-    const willMakeError = Math.random() < 0.15;
+    // Уменьшена вероятность ошибки с 15% до 5%
+    const willMakeError = Math.random() < 0.05;
     let numberToTake = nextNumber;
     let isValid = true;
     if (willMakeError && nextNumber < 25) { numberToTake = Math.min(nextNumber + 1, 25); isValid = false; }
@@ -181,14 +196,21 @@ export const gameRouter = router({
       const allMoves = await db.select().from(gameMoves).where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
       const playersMovesCount = new Map<string, number>();
       for (const move of allMoves) playersMovesCount.set(move.userId, (playersMovesCount.get(move.userId) || 0) + 1);
+      
       let winnerId = 'bot';
       let maxMoves = 0;
       for (const [playerId, movesCount] of playersMovesCount) if (movesCount > maxMoves) { maxMoves = movesCount; winnerId = playerId; }
+      
       await db.update(gameSessions).set({ status: 'finished', winnerId, finishedAt }).where(eq(gameSessions.id, input.sessionId));
+      
       if (winnerId !== 'bot') {
         const [userStats] = await db.select().from(users).where(eq(users.id, winnerId));
-        await db.update(users).set({ wins: (userStats?.wins || 0) + 1, bestTime: duration }).where(eq(users.id, winnerId));
+        const currentWins = (userStats?.wins || 0) + 1;
+        const currentBestTime = userStats?.bestTime || duration;
+        const newBestTime = duration < currentBestTime ? duration : currentBestTime;
+        await db.update(users).set({ wins: currentWins, bestTime: newBestTime }).where(eq(users.id, winnerId));
       }
+      
       const humanPlayers = players.filter(p => !p.isBot);
       await db.insert(matchHistory).values({ sessionId: input.sessionId, players: humanPlayers.map(p => ({ id: p.userId, username: p.userId === 'bot' ? 'Бот' : `Игрок ${p.userId}`, color: p.color, errors: p.errors || 0, completed: true, progress: playersMovesCount.get(p.userId!) || 0 })), winnerId, duration });
     }
