@@ -21,7 +21,7 @@ export default function RegisterForm() {
       const result = await signUp.email({
         email,
         password,
-        name: username,
+        name: username, // Важно: name, а не username
       });
       
       if (result.error) {

@@ -146,7 +146,6 @@ export const gameRouter = router({
     
     await db.insert(gameMoves).values({ sessionId: input.sessionId, userId: ctx.user.id, number: input.number, isValid: true, timestamp: new Date() });
     
-    // Обновляем прогресс игрока
     const playerValidMoves = await db.select().from(gameMoves).where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.userId, ctx.user.id), eq(gameMoves.isValid, true)));
     await db.update(gamePlayers).set({ progress: playerValidMoves.length }).where(eq(gamePlayers.id, currentPlayer.id));
     
@@ -344,6 +343,12 @@ export const gameRouter = router({
   }),
   
   getLeaderboard: protectedProcedure.query(async () => {
-    return await db.select({ id: users.id, username: users.username, wins: users.wins, bestTime: users.bestTime }).from(users).orderBy(desc(users.wins)).limit(50);
+    return await db.select({ 
+      id: users.id, 
+      name: users.name,
+      username: users.username, 
+      wins: users.wins, 
+      bestTime: users.bestTime 
+    }).from(users).orderBy(desc(users.wins)).limit(50);
   }),
 });

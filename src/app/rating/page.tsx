@@ -9,6 +9,7 @@ import Header from '@/components/Header';
 
 interface Player {
   id: string;
+  name: string;
   username: string;
   wins: number;
   bestTime: number;
@@ -44,6 +45,10 @@ export default function RatingPage() {
     if (index === 1) return '🥈';
     if (index === 2) return '🥉';
     return `${index + 1}`;
+  };
+
+  const getDisplayName = (player: Player) => {
+    return player.username || player.name || 'Игрок';
   };
 
   if (isLoading) {
@@ -88,7 +93,7 @@ export default function RatingPage() {
           
           {players.map((player, index) => {
             const isCurrentUser = session?.user?.id === player.id;
-            const displayName = player.username || 'Игрок';
+            const displayName = getDisplayName(player);
             
             return (
               <div 
@@ -118,13 +123,13 @@ export default function RatingPage() {
                     fontSize: '16px',
                     color: 'white'
                   }}>
-                    {displayName[0]?.toUpperCase()}
+                    {displayName[0]?.toUpperCase() || '?'}
                   </div>
                   <span style={{ color: 'white' }}>{displayName}</span>
                   {isCurrentUser && <span style={{ fontSize: '11px', padding: '2px 8px', background: '#6a5cff', borderRadius: '20px' }}>Вы</span>}
                 </div>
                 
-                <div style={{ color: '#10b981', fontWeight: 'bold' }}>{player.wins}</div>
+                <div style={{ color: '#10b981', fontWeight: 'bold' }}>{player.wins || 0}</div>
                 <div style={{ color: '#fbbf24' }}>{formatTime(player.bestTime)}</div>
               </div>
             );
