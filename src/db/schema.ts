@@ -59,6 +59,7 @@ export const gameSessions = pgTable("game_sessions", {
   finishedAt: timestamp("finished_at"),
 });
 
+// ТОЛЬКО ОДИН РАЗ! С progress
 export const gamePlayers = pgTable("game_players", {
   id: serial("id").primaryKey(),
   sessionId: integer("session_id").notNull().references(() => gameSessions.id, { onDelete: "cascade" }),
@@ -68,6 +69,7 @@ export const gamePlayers = pgTable("game_players", {
   color: text("color").notNull(),
   completedAt: timestamp("completed_at"),
   errors: integer("errors").default(0),
+  progress: integer("progress").default(0),
   order: integer("order").notNull(),
 });
 

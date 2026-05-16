@@ -33,13 +33,9 @@ export default function RatingPage() {
 
   const formatTime = (seconds: number) => {
     if (!seconds || seconds === 0) return '—';
-    let secs = seconds;
-    if (seconds > 60) {
-      secs = Math.floor(seconds / 1000);
-    }
-    const mins = Math.floor(secs / 60);
-    const remainingSecs = secs % 60;
-    if (mins > 0) return `${mins} мин ${remainingSecs} сек`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) return `${mins} мин ${secs} сек`;
     return `${secs} сек`;
   };
 
@@ -48,13 +44,6 @@ export default function RatingPage() {
     if (index === 1) return '🥈';
     if (index === 2) return '🥉';
     return `${index + 1}`;
-  };
-
-  const getRankColor = (index: number) => {
-    if (index === 0) return '#ffd700';
-    if (index === 1) return '#c0c0c0';
-    if (index === 2) return '#cd7f32';
-    return 'white';
   };
 
   if (isLoading) {
@@ -81,7 +70,6 @@ export default function RatingPage() {
           borderRadius: '20px', 
           overflow: 'hidden', 
           border: '1px solid #1f2540',
-          boxShadow: '0 0 30px rgba(79,140,255,0.2)'
         }}>
           <div style={{ 
             display: 'grid', 
@@ -94,15 +82,13 @@ export default function RatingPage() {
           }}>
             <div>Место</div>
             <div>Игрок</div>
-            <div>🏆 Победы</div>
-            <div>⚡ Лучшее время</div>
+            <div>Победы</div>
+            <div>Лучшее время</div>
           </div>
           
           {players.map((player, index) => {
             const isCurrentUser = session?.user?.id === player.id;
             const displayName = player.username || 'Игрок';
-            const wins = player.wins || 0;
-            const bestTime = player.bestTime || 0;
             
             return (
               <div 
@@ -114,64 +100,32 @@ export default function RatingPage() {
                   alignItems: 'center', 
                   borderTop: '1px solid #1f2540',
                   background: isCurrentUser ? 'rgba(106, 92, 255, 0.1)' : 'transparent',
-                  borderLeft: isCurrentUser ? '3px solid #6a5cff' : 'none'
                 }}
               >
-                <div style={{ 
-                  fontSize: index < 3 ? '28px' : '18px', 
-                  fontWeight: 'bold', 
-                  color: getRankColor(index),
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
+                <div style={{ fontWeight: 'bold', color: index < 3 ? '#fbbf24' : 'white' }}>
                   {getMedal(index)}
                 </div>
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ 
-                    width: '44px', 
-                    height: '44px', 
+                    width: '40px', 
+                    height: '40px', 
                     borderRadius: '50%', 
                     background: 'linear-gradient(135deg, #6a5cff, #4f8cff)', 
                     display: 'flex', 
                     alignItems: 'center', 
-                    justifyContent: 'center', 
-                    fontWeight: 'bold',
-                    fontSize: '18px',
+                    justifyContent: 'center',
+                    fontSize: '16px',
                     color: 'white'
                   }}>
-                    {displayName[0]?.toUpperCase() || '?'}
+                    {displayName[0]?.toUpperCase()}
                   </div>
-                  <div>
-                    <div style={{ fontSize: '18px', fontWeight: '600', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', color: 'white' }}>
-                      {displayName}
-                      {isCurrentUser && (
-                        <span style={{ 
-                          fontSize: '11px', 
-                          padding: '2px 10px', 
-                          background: '#6a5cff', 
-                          borderRadius: '20px', 
-                          color: 'white' 
-                        }}>
-                          Вы
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  <span style={{ color: 'white' }}>{displayName}</span>
+                  {isCurrentUser && <span style={{ fontSize: '11px', padding: '2px 8px', background: '#6a5cff', borderRadius: '20px' }}>Вы</span>}
                 </div>
                 
-                <div>
-                  <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '18px' }}>
-                    {wins}
-                  </span>
-                </div>
-                
-                <div>
-                  <span style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '16px' }}>
-                    {formatTime(bestTime)}
-                  </span>
-                </div>
+                <div style={{ color: '#10b981', fontWeight: 'bold' }}>{player.wins}</div>
+                <div style={{ color: '#fbbf24' }}>{formatTime(player.bestTime)}</div>
               </div>
             );
           })}
@@ -187,25 +141,7 @@ export default function RatingPage() {
       <style jsx>{`
         .rating-page {
           min-height: 100vh;
-          position: relative;
-          overflow: hidden;
-          background: radial-gradient(circle at 20% 20%, #1a1f33, transparent 40%),
-                      radial-gradient(circle at 80% 30%, #2a2f45, transparent 40%),
-                      #0b0f1a;
-        }
-        .rating-page::before {
-          content: "";
-          position: absolute;
-          width: 200%;
-          height: 200%;
-          background-image: radial-gradient(white 1px, transparent 1px);
-          background-size: 40px 40px;
-          opacity: 0.05;
-          animation: starsMove 60s linear infinite;
-        }
-        @keyframes starsMove {
-          from { transform: translate(0, 0); }
-          to { transform: translate(-200px, -200px); }
+          background: #0b0f1a;
         }
       `}</style>
     </div>
