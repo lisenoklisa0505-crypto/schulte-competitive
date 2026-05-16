@@ -2,7 +2,7 @@ import { router, protectedProcedure } from '../trpc';
 import { z } from 'zod';
 import { db } from '@/db';
 import { gameSessions, gamePlayers, gameMoves, matchHistory, users } from '@/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, isNull } from 'drizzle-orm';
 import { generateSchulteTable } from '@/lib/schulte';
 
 const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'];
@@ -66,6 +66,7 @@ export const gameRouter = router({
     
     if (!newSession) throw new Error('Не удалось создать игру с ботом');
     
+    // Игрок (человек)
     await db.insert(gamePlayers).values({ 
       sessionId: newSession.id, 
       userId: ctx.user.id, 
@@ -74,9 +75,10 @@ export const gameRouter = router({
       isBot: false
     });
     
+    // Бот (userId = null)
     await db.insert(gamePlayers).values({ 
       sessionId: newSession.id, 
-      userId: 'bot_system', 
+      userId: null,
       isBot: true, 
       color: colors[1], 
       order: 1, 
@@ -199,12 +201,12 @@ export const gameRouter = router({
       const duration = Math.floor((finishedAt.getTime() - new Date(session.createdAt!).getTime()) / 1000);
       
       const allValidMovesData = await db.select().from(gameMoves).where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
-      const playersMovesCount = new Map<string, number>();
+      const playersMovesCount = new Map<string | null, number>();
       for (const move of allValidMovesData) {
         playersMovesCount.set(move.userId, (playersMovesCount.get(move.userId) || 0) + 1);
       }
       
-      let winnerId = 'bot_system';
+      let winnerId: string | null = null;
       let maxMoves = 0;
       for (const [playerId, movesCount] of playersMovesCount) {
         if (movesCount > maxMoves) {
@@ -215,7 +217,7 @@ export const gameRouter = router({
       
       await db.update(gameSessions).set({ status: 'finished', winnerId, finishedAt }).where(eq(gameSessions.id, input.sessionId));
       
-      if (winnerId !== 'bot_system') {
+      if (winnerId !== null && winnerId !== 'null') {
         const [userStats] = await db.select().from(users).where(eq(users.id, winnerId));
         const currentWins = (userStats?.wins || 0) + 1;
         const currentBestTime = userStats?.bestTime || duration;
@@ -225,7 +227,7 @@ export const gameRouter = router({
       
       const humanPlayers = players.filter(p => !p.isBot);
       for (const player of humanPlayers) {
-        const playerMovesCount = playersMovesCount.get(player.userId!) || 0;
+        const playerMovesCount = playersMovesCount.get(player.userId) || 0;
         const isWinner = winnerId === player.userId;
         
         await db.insert(matchHistory).values({
@@ -238,7 +240,7 @@ export const gameRouter = router({
             completed: true,
             progress: playerMovesCount,
           }],
-          winnerId: isWinner ? player.userId! : (winnerId === 'bot_system' ? 'bot' : 'opponent'),
+          winnerId: isWinner ? player.userId! : (winnerId === null ? 'bot' : 'opponent'),
           duration,
         });
       }
@@ -293,7 +295,7 @@ export const gameRouter = router({
       
       await db.insert(gameMoves).values({ 
         sessionId: input.sessionId, 
-        userId: 'bot_system', 
+        userId: null,
         number: numberToTake, 
         isValid, 
         timestamp: new Date() 
@@ -307,7 +309,7 @@ export const gameRouter = router({
         const botValidMoves = await db
           .select()
           .from(gameMoves)
-          .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.userId, 'bot_system'), eq(gameMoves.isValid, true)));
+          .where(and(eq(gameMoves.sessionId, input.sessionId), isNull(gameMoves.userId), eq(gameMoves.isValid, true)));
         
         await db.update(gamePlayers)
           .set({ progress: botValidMoves.length })
@@ -325,12 +327,12 @@ export const gameRouter = router({
           .from(gameMoves)
           .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
         
-        const playersMovesCount = new Map<string, number>();
+        const playersMovesCount = new Map<string | null, number>();
         for (const move of allMoves) {
           playersMovesCount.set(move.userId, (playersMovesCount.get(move.userId) || 0) + 1);
         }
         
-        let winnerId = 'bot_system';
+        let winnerId: string | null = null;
         let maxMoves = 0;
         for (const [playerId, movesCount] of playersMovesCount) {
           if (movesCount > maxMoves) {
@@ -341,7 +343,7 @@ export const gameRouter = router({
         
         await db.update(gameSessions).set({ status: 'finished', winnerId, finishedAt }).where(eq(gameSessions.id, input.sessionId));
         
-        if (winnerId !== 'bot_system') {
+        if (winnerId !== null && winnerId !== 'null') {
           const [userStats] = await db.select().from(users).where(eq(users.id, winnerId));
           const currentWins = (userStats?.wins || 0) + 1;
           const currentBestTime = userStats?.bestTime || duration;
@@ -351,7 +353,7 @@ export const gameRouter = router({
         
         const humanPlayers = players.filter(p => !p.isBot);
         for (const player of humanPlayers) {
-          const playerMovesCount = playersMovesCount.get(player.userId!) || 0;
+          const playerMovesCount = playersMovesCount.get(player.userId) || 0;
           const isWinner = winnerId === player.userId;
           
           await db.insert(matchHistory).values({
@@ -364,7 +366,7 @@ export const gameRouter = router({
               completed: true,
               progress: playerMovesCount,
             }],
-            winnerId: isWinner ? player.userId! : (winnerId === 'bot_system' ? 'bot' : 'opponent'),
+            winnerId: isWinner ? player.userId! : (winnerId === null ? 'bot' : 'opponent'),
             duration,
           });
         }
@@ -400,7 +402,7 @@ export const gameRouter = router({
       status: session.status,
       winnerId: session.winnerId,
       players: players.map(p => ({
-        userId: p.userId || (p.isBot ? 'bot_system' : 'unknown'),
+        userId: p.userId || (p.isBot ? null : 'unknown'),
         isBot: p.isBot || false,
         color: p.color,
         errors: p.errors || 0,
