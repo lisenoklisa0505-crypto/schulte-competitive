@@ -1,4 +1,4 @@
-import { router, protectedProcedure } from '../trpc';
+import { router, protectedProcedure, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { db } from '@/db';
 import { gameSessions, gamePlayers, gameMoves, matchHistory, users } from '@/db/schema';
@@ -247,7 +247,9 @@ export const gameRouter = router({
     return { valid: true, number: input.number, playerColor: currentPlayer.color };
   }),
   
-  makeBotMove: protectedProcedure.input(z.object({ sessionId: z.number() })).mutation(async ({ input }) => {
+  makeBotMove: publicProcedure // ← ИСПРАВЛЕНО: public вместо protected
+    .input(z.object({ sessionId: z.number() }))
+    .mutation(async ({ input }) => {
     try {
       const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
       if (!session || session.status !== 'active') {

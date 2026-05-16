@@ -30,7 +30,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
 
   const { data: stateRaw, refetch } = trpc.game.getGameState.useQuery(
     { sessionId },
-    { refetchInterval: 500 }
+    { refetchInterval: 2000 }
   );
 
   const makeMove = trpc.game.makeMove.useMutation();
@@ -80,11 +80,11 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
         setMyProgress(currentPlayer.progress || 0);
       }
       
-      if (pendingMove !== null && state.currentNumber !== pendingMove + 1) {
+      if (pendingMove !== null) {
         setPendingMove(null);
       }
     }
-  }, [state, userId, gameStatus, currentNumber, pendingMove]);
+  }, [state, userId, gameStatus, currentNumber]);
 
   // Выход из игры
   const handleExit = async () => {
@@ -119,7 +119,6 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
         setCurrentNumber(prev => prev + 1);
         setPendingMove(null);
       } else {
-        // Ошибка - увеличиваем счетчик, но без alert
         setMyErrors(prev => prev + 1);
         setMyMoves(prev => {
           const newSet = new Set(prev);
@@ -150,37 +149,43 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     }
   };
 
-  // Бот
+  // Бот - исправленный эффект
   useEffect(() => {
     const hasBot = players?.some((p: any) => p.isBot);
-    if (hasBot && gameStatus === 'active' && !isBotThinking && currentNumber <= 25) {
-      const timer = setTimeout(() => {
+    
+    if (!hasBot) return;
+    if (gameStatus !== 'active') return;
+    if (winner) return;
+    if (currentNumber > 25) return;
+    if (isBotThinking) return;
+    
+    const timeout = setTimeout(async () => {
+      try {
         setIsBotThinking(true);
-        makeBotMove.mutate(
-          { sessionId },
-          {
-            onSuccess: (data: any) => {
-              if (data?.success && data.number) {
-                setTakenNumbers(prev => ({
-                  ...prev,
-                  [data.number]: '#4ECDC4'
-                }));
-                if (data.isValid) {
-                  setCurrentNumber(prev => prev + 1);
-                }
-              }
-              setIsBotThinking(false);
-            },
-            onError: (error) => {
-              console.error('Bot move error:', error);
-              setIsBotThinking(false);
-            }
+        
+        const result = await makeBotMove.mutateAsync({
+          sessionId,
+        });
+        
+        if (result?.success && result.number) {
+          setTakenNumbers(prev => ({
+            ...prev,
+            [result.number]: '#4ECDC4',
+          }));
+          
+          if (result.isValid) {
+            setCurrentNumber(prev => prev + 1);
           }
-        );
-      }, 250);
-      return () => clearTimeout(timer);
-    }
-  }, [players, gameStatus, sessionId, makeBotMove, currentNumber, isBotThinking]);
+        }
+      } catch (err) {
+        console.error('Bot move failed:', err);
+      } finally {
+        setIsBotThinking(false);
+      }
+    }, 350);
+    
+    return () => clearTimeout(timeout);
+  }, [currentNumber, gameStatus, players, winner, isBotThinking, sessionId, makeBotMove]);
 
   // Проверка загрузки
   if (!grid || grid.length === 0) {
