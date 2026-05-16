@@ -131,7 +131,7 @@ export const gameRouter = router({
         sessionId: input.sessionId,
         players: [{ 
           id: ctx.user.id, 
-          username: ctx.user.name || 'Вы',
+          username: 'Вы',
           color: currentPlayer.color, 
           errors: currentPlayer.errors || 0,
           completed: false,
@@ -293,7 +293,7 @@ export const gameRouter = router({
       
       await db.insert(gameMoves).values({ 
         sessionId: input.sessionId, 
-        userId: botPlayer.userId || 'bot_system', 
+        userId: 'bot_system', 
         number: numberToTake, 
         isValid, 
         timestamp: new Date() 
@@ -307,7 +307,7 @@ export const gameRouter = router({
         const botValidMoves = await db
           .select()
           .from(gameMoves)
-          .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.userId, botPlayer.userId || 'bot_system'), eq(gameMoves.isValid, true)));
+          .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.userId, 'bot_system'), eq(gameMoves.isValid, true)));
         
         await db.update(gamePlayers)
           .set({ progress: botValidMoves.length })
