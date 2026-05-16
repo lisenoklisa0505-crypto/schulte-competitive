@@ -15,6 +15,13 @@
       "when": 1778772502429,
       "tag": "0001_dear_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778934807005,
+      "tag": "0002_bumpy_wallop",
+      "breakpoints": true
     }
   ]
 }
