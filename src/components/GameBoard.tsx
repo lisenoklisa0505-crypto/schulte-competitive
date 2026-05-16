@@ -47,6 +47,10 @@ export default function GameBoard({ sessionId, userId }: Props) {
   const [myProgress, setMyProgress] = useState<number>(0);
   const [myColor, setMyColor] = useState<string>('#FF6B6B');
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [isProcessingMove, setIsProcessingMove] = useState<boolean>(false);
+  
+  // Локальная блокировка чисел, которые уже были нажаты (даже если сервер ещё не подтвердил)
+  const [locallyLockedNumbers, setLocallyLockedNumbers] = useState<Set<number>>(new Set());
 
   const botThinkingRef = useRef<boolean>(false);
   const currentNumberRef = useRef<number>(1);
@@ -120,6 +124,11 @@ export default function GameBoard({ sessionId, userId }: Props) {
         setMyErrors(currentPlayer.errors || 0);
         setMyProgress(currentPlayer.progress || 0);
       }
+      
+      // Снимаем блокировку обработки
+      if (isProcessingMove) {
+        setIsProcessingMove(false);
+      }
     }
   }, [state, userId, gameStatus, startedAt]);
 
@@ -136,20 +145,26 @@ export default function GameBoard({ sessionId, userId }: Props) {
     router.push('/rooms');
   };
 
-  // Обработка клика по ячейке с оптимистичным обновлением (мгновенно)
+  // Обработка клика по ячейке с МГНОВЕННОЙ локальной блокировкой
   const handleCellClick = async (number: number): Promise<void> => {
+    // Защита от двойного клика
+    if (isProcessingMove) return;
     if (myMoves.has(number)) return;
     if (takenNumbers[number]) return;
+    if (locallyLockedNumbers.has(number)) return;
     if (gameStatus !== 'active') return;
     
-    // МГНОВЕННОЕ оптимистичное обновление UI
+    setIsProcessingMove(true);
+    
+    // МГНОВЕННО блокируем ячейку ЛОКАЛЬНО (даже для бота!)
+    setLocallyLockedNumbers(prev => new Set(prev).add(number));
     setTakenNumbers(prev => ({ ...prev, [number]: myColor }));
     setMyMoves(prev => new Set(prev).add(number));
+    setMyProgress(prev => prev + 1);
     
     try {
       const result = await makeMove.mutateAsync({ sessionId, number });
       if (result.valid) {
-        setMyProgress(prev => prev + 1);
         setCurrentNumber(prev => prev + 1);
         await refetch();
       } else {
@@ -164,6 +179,12 @@ export default function GameBoard({ sessionId, userId }: Props) {
           newSet.delete(number);
           return newSet;
         });
+        setLocallyLockedNumbers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(number);
+          return newSet;
+        });
+        setMyProgress(prev => prev - 1);
         setMyErrors(prev => prev + 1);
         if (result.message) console.log(result.message);
       }
@@ -179,22 +200,42 @@ export default function GameBoard({ sessionId, userId }: Props) {
         newSet.delete(number);
         return newSet;
       });
+      setLocallyLockedNumbers(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(number);
+        return newSet;
+      });
+      setMyProgress(prev => prev - 1);
       setMyErrors(prev => prev + 1);
       console.error('Move error:', err);
+    } finally {
+      setIsProcessingMove(false);
     }
   };
 
-  // Ход бота
+  // Ход бота с проверкой локальной блокировки
   const runBotMove = useCallback(async (): Promise<(() => void) | undefined> => {
+    if (isProcessingMove) return;
     if (botThinkingRef.current) return;
+    
+    // Получаем следующее число, которое должен нажать бот
+    const targetNumber = currentNumberRef.current;
+    
+    // Если число уже локально заблокировано (игрок уже нажал), бот не ходит
+    if (locallyLockedNumbers.has(targetNumber)) return;
+    
     botThinkingRef.current = true;
 
     let cancelled = false;
 
     try {
-      const delay = 700 + Math.random() * 2500;
+      // Задержка бота 800-1500 мс
+      const delay = 800 + Math.random() * 700;
       await new Promise(resolve => setTimeout(resolve, delay));
       if (cancelled) return;
+      
+      // Повторная проверка после задержки
+      if (locallyLockedNumbers.has(targetNumber)) return;
 
       const result = await makeBotMove.mutateAsync({ sessionId });
       if (cancelled) return;
@@ -206,7 +247,7 @@ export default function GameBoard({ sessionId, userId }: Props) {
     }
 
     return () => { cancelled = true; };
-  }, [sessionId, makeBotMove, refetch]);
+  }, [sessionId, makeBotMove, refetch, isProcessingMove, locallyLockedNumbers]);
 
   useEffect(() => {
     const hasBot = players?.some((p: Player) => p.isBot);
@@ -373,7 +414,13 @@ export default function GameBoard({ sessionId, userId }: Props) {
                 {grid.flat().map((num: number, idx: number) => {
                   const cellColor = takenNumbers[num];
                   const isCurrent = num === currentNumber;
-                  const isDisabled = !!cellColor || myMoves.has(num) || isFinished || gameStatus !== 'active';
+                  // Учитываем локальную блокировку
+                  const isLocallyLocked = locallyLockedNumbers.has(num);
+                  const isDisabled = !!cellColor || myMoves.has(num) || isLocallyLocked || isFinished || gameStatus !== 'active' || isProcessingMove;
+                  
+                  // Особая подсветка для локально заблокированных чисел (показываем цвет игрока)
+                  const displayColor = cellColor || (isLocallyLocked ? myColor : null);
+                  
                   return (
                     <button
                       key={idx}
@@ -384,17 +431,17 @@ export default function GameBoard({ sessionId, userId }: Props) {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: cellColor || '#1a1f33',
+                        background: displayColor || '#1a1f33',
                         borderRadius: '12px',
                         fontSize: '20px',
                         fontWeight: 'bold',
-                        color: cellColor ? 'white' : '#E8EAFF',
-                        border: isCurrent && !cellColor && gameStatus === 'active'
+                        color: displayColor ? 'white' : '#E8EAFF',
+                        border: isCurrent && !displayColor && gameStatus === 'active'
                           ? '3px solid #F5A623'
                           : '1px solid #2a2f45',
                         cursor: isDisabled ? 'not-allowed' : 'pointer',
                         opacity: isDisabled ? 0.6 : 1,
-                        boxShadow: isCurrent && !cellColor && gameStatus === 'active'
+                        boxShadow: isCurrent && !displayColor && gameStatus === 'active'
                           ? '0 0 15px rgba(245,166,35,0.6)'
                           : 'none',
                         transition: 'all 0.05s ease',
