@@ -77,7 +77,7 @@ export default function CreateGameModal({ isOpen, onClose }: Props) {
         width: '450px',
         border: '1px solid #1f2540'
       }}>
-        <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Создание игры</h2>
+        <h2 style={{ fontSize: '24px', marginBottom: '16px', color: 'white' }}>Создание игры</h2>
         
         <div style={{ marginBottom: '24px' }}>
           <label style={{ display: 'block', marginBottom: '8px', color: '#cfd3ff' }}>Режим игры</label>
@@ -193,7 +193,7 @@ export default function CreateGameModal({ isOpen, onClose }: Props) {
         {gameMode === 'bot' && (
           <div style={{ marginBottom: '20px', padding: '16px', background: '#1a1f33', borderRadius: '12px' }}>
             <p style={{ color: '#9ca3af', fontSize: '14px' }}>
-              🤖 Игра с ботом начнется сразу. Комната не будет создана.
+              🤖 Игра с ботом начнется сразу. Бот будет ходить с задержкой 0.7-3.2 секунды и иногда ошибаться.
             </p>
           </div>
         )}

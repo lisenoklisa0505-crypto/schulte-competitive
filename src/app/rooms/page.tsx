@@ -9,7 +9,7 @@ import Header from '@/components/Header';
 import CreateGameModal from '@/components/CreateGameModal';
 
 interface Room {
-  id: number;
+  id: string;
   name: string;
   players: number;
   maxPlayers: number;
@@ -20,7 +20,7 @@ export default function RoomsPage() {
   const router = useRouter();
   const { data: user, isLoading } = trpc.auth.me.useQuery();
   const { data: activeSessions, refetch } = trpc.game.getActiveSessions.useQuery(undefined, {
-    refetchInterval: 5000,
+    refetchInterval: 10000, // 10 секунд вместо 5
   });
 
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -30,7 +30,7 @@ export default function RoomsPage() {
     if (activeSessions && Array.isArray(activeSessions)) {
       const formatted = activeSessions.map((s: any) => ({
         id: s.id,
-        name: s.name || `Комната ${s.id}`,
+        name: s.name || `Комната ${s.id.slice(0, 8)}`,
         players: s.players || 1,
         maxPlayers: s.maxPlayers || 4,
         isPrivate: s.isPrivate || false,
