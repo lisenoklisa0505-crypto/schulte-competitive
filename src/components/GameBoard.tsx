@@ -30,7 +30,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
 
   const { data: stateRaw, refetch } = trpc.game.getGameState.useQuery(
     { sessionId },
-    { refetchInterval: 100 }
+    { refetchInterval: 500 }
   );
 
   const makeMove = trpc.game.makeMove.useMutation();
@@ -70,7 +70,9 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
       }
       if (state.winnerId) setWinner(state.winnerId);
       if (state.table) setGrid(state.table);
-      if (state.currentNumber) setCurrentNumber(state.currentNumber);
+      if (state.currentNumber && state.currentNumber !== currentNumber) {
+        setCurrentNumber(state.currentNumber);
+      }
       
       const currentPlayer = state.players?.find((p: any) => String(p.userId) === String(userId));
       if (currentPlayer) {
@@ -82,7 +84,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
         setPendingMove(null);
       }
     }
-  }, [state, userId, gameStatus, pendingMove]);
+  }, [state, userId, gameStatus, currentNumber, pendingMove]);
 
   // Выход из игры
   const handleExit = async () => {
@@ -99,12 +101,12 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     router.push('/rooms');
   };
 
-  // Обработка клика по ячейке
+  // Обработка клика по ячейке - без alert
   const handleCellClick = async (number: number) => {
     if (myMoves.has(number)) return;
     if (takenNumbers[number]) return;
     if (gameStatus !== 'active') return;
-    if (pendingMove !== null) return;
+    if (pendingMove !== null && pendingMove === number) return;
     
     setPendingMove(number);
     setMyMoves(prev => new Set(prev).add(number));
@@ -114,8 +116,11 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
       const result = await makeMove.mutateAsync({ sessionId, number });
       if (result.valid) {
         setMyProgress(prev => prev + 1);
-        refetch();
+        setCurrentNumber(prev => prev + 1);
+        setPendingMove(null);
       } else {
+        // Ошибка - увеличиваем счетчик, но без alert
+        setMyErrors(prev => prev + 1);
         setMyMoves(prev => {
           const newSet = new Set(prev);
           newSet.delete(number);
@@ -127,11 +132,9 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
           return newObj;
         });
         setPendingMove(null);
-        if (result.message) {
-          alert(result.message);
-        }
       }
     } catch (err) {
+      setMyErrors(prev => prev + 1);
       setMyMoves(prev => {
         const newSet = new Set(prev);
         newSet.delete(number);
@@ -150,15 +153,22 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
   // Бот
   useEffect(() => {
     const hasBot = players?.some((p: any) => p.isBot);
-    if (hasBot && gameStatus === 'active' && !winner && !isBotThinking && currentNumber <= 25) {
+    if (hasBot && gameStatus === 'active' && !isBotThinking && currentNumber <= 25) {
       const timer = setTimeout(() => {
         setIsBotThinking(true);
         makeBotMove.mutate(
           { sessionId },
           {
-            onSuccess: (data) => {
-              console.log('Bot move success:', data);
-              refetch();
+            onSuccess: (data: any) => {
+              if (data?.success && data.number) {
+                setTakenNumbers(prev => ({
+                  ...prev,
+                  [data.number]: '#4ECDC4'
+                }));
+                if (data.isValid) {
+                  setCurrentNumber(prev => prev + 1);
+                }
+              }
               setIsBotThinking(false);
             },
             onError: (error) => {
@@ -167,10 +177,10 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
             }
           }
         );
-      }, 600);
+      }, 250);
       return () => clearTimeout(timer);
     }
-  }, [players, gameStatus, sessionId, makeBotMove, refetch, winner, currentNumber, isBotThinking]);
+  }, [players, gameStatus, sessionId, makeBotMove, currentNumber, isBotThinking]);
 
   // Проверка загрузки
   if (!grid || grid.length === 0) {
@@ -262,7 +272,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
               <div style={{ textAlign: 'center', padding: '60px' }}>
                 <div style={{ fontSize: '64px', marginBottom: '16px' }}>🏆</div>
                 <h2 style={{ color: 'white', marginBottom: '8px' }}>
-                  {String(winner) === String(userId) ? 'Вы победили!' : `Победил: ${winner === 'bot_system' ? 'Бот' : winner.slice(0, 8)}`}
+                  {String(winner) === String(userId) ? 'Вы победили!' : `Победил: ${winner === null ? 'Бот' : winner.slice(0, 8)}`}
                 </h2>
                 <p style={{ color: '#fbbf24', marginBottom: '16px' }}>Время: {formatTime(timeElapsed)}</p>
                 <button
