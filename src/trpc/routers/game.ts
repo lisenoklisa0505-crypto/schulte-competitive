@@ -247,137 +247,141 @@ export const gameRouter = router({
     return { valid: true, number: input.number, playerColor: currentPlayer.color };
   }),
   
-  makeBotMove: publicProcedure // ← ИСПРАВЛЕНО: public вместо protected
+  makeBotMove: publicProcedure
     .input(z.object({ sessionId: z.number() }))
     .mutation(async ({ input }) => {
-    try {
-      const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
-      if (!session || session.status !== 'active') {
-        return { success: false };
-      }
-      
-      const [botPlayer] = await db
-        .select()
-        .from(gamePlayers)
-        .where(and(eq(gamePlayers.sessionId, input.sessionId), eq(gamePlayers.isBot, true)));
-      
-      if (!botPlayer) {
-        return { success: false };
-      }
-      
-      const allValidMoves = await db
-        .select()
-        .from(gameMoves)
-        .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
-      
-      const nextNumber = allValidMoves.length + 1;
-      if (nextNumber > 25) {
-        return { success: false };
-      }
-      
-      const existingMove = await db
-        .select()
-        .from(gameMoves)
-        .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.number, nextNumber), eq(gameMoves.isValid, true)));
-      
-      if (existingMove.length > 0) {
-        return { success: false };
-      }
-      
-      const willMakeError = Math.random() < 0.05;
-      let numberToTake = nextNumber;
-      let isValid = true;
-      
-      if (willMakeError && nextNumber < 25) {
-        numberToTake = Math.min(nextNumber + 1, 25);
-        isValid = false;
-      }
-      
-      await db.insert(gameMoves).values({ 
-        sessionId: input.sessionId, 
-        userId: null,
-        number: numberToTake, 
-        isValid, 
-        timestamp: new Date() 
-      });
-      
-      if (!isValid) {
-        await db.update(gamePlayers)
-          .set({ errors: (botPlayer.errors || 0) + 1 })
-          .where(eq(gamePlayers.id, botPlayer.id));
-      } else {
-        const botValidMoves = await db
-          .select()
-          .from(gameMoves)
-          .where(and(eq(gameMoves.sessionId, input.sessionId), isNull(gameMoves.userId), eq(gameMoves.isValid, true)));
+      try {
+        const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));
+        if (!session || session.status !== 'active') {
+          return { success: false };
+        }
         
-        await db.update(gamePlayers)
-          .set({ progress: botValidMoves.length })
-          .where(eq(gamePlayers.id, botPlayer.id));
-      }
-      
-      const totalValidMoves = allValidMoves.length + (isValid ? 1 : 0);
-      
-      if (totalValidMoves === 25) {
-        const finishedAt = new Date();
-        const duration = Math.floor((finishedAt.getTime() - new Date(session.createdAt!).getTime()) / 1000);
-        const players = await db.select().from(gamePlayers).where(eq(gamePlayers.sessionId, input.sessionId));
-        const allMoves = await db
+        const [botPlayer] = await db
+          .select()
+          .from(gamePlayers)
+          .where(and(eq(gamePlayers.sessionId, input.sessionId), eq(gamePlayers.isBot, true)));
+        
+        if (!botPlayer) {
+          return { success: false };
+        }
+        
+        const allValidMoves = await db
           .select()
           .from(gameMoves)
           .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
         
-        const playersMovesCount = new Map<string | null, number>();
-        for (const move of allMoves) {
-          playersMovesCount.set(move.userId, (playersMovesCount.get(move.userId) || 0) + 1);
+        const nextNumber = allValidMoves.length + 1;
+        if (nextNumber > 25) {
+          return { success: false };
         }
         
-        let winnerId: string | null = null;
-        let maxMoves = 0;
-        for (const [playerId, movesCount] of playersMovesCount) {
-          if (movesCount > maxMoves) {
-            maxMoves = movesCount;
-            winnerId = playerId;
+        const existingMove = await db
+          .select()
+          .from(gameMoves)
+          .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.number, nextNumber), eq(gameMoves.isValid, true)));
+        
+        if (existingMove.length > 0) {
+          return { success: false };
+        }
+        
+        // 12% шанс ошибки (как у человека)
+        const willMakeError = Math.random() < 0.12;
+        let numberToTake = nextNumber;
+        let isValid = true;
+        
+        if (willMakeError && nextNumber < 25) {
+          // Человеческая ошибка: может нажать число в диапазоне -2..+2 от нужного
+          const offsets = [-2, -1, 1, 2];
+          const randomOffset = offsets[Math.floor(Math.random() * offsets.length)];
+          numberToTake = Math.max(1, Math.min(25, nextNumber + randomOffset));
+          isValid = false;
+        }
+        
+        await db.insert(gameMoves).values({ 
+          sessionId: input.sessionId, 
+          userId: null,
+          number: numberToTake, 
+          isValid, 
+          timestamp: new Date() 
+        });
+        
+        if (!isValid) {
+          await db.update(gamePlayers)
+            .set({ errors: (botPlayer.errors || 0) + 1 })
+            .where(eq(gamePlayers.id, botPlayer.id));
+        } else {
+          const botValidMoves = await db
+            .select()
+            .from(gameMoves)
+            .where(and(eq(gameMoves.sessionId, input.sessionId), isNull(gameMoves.userId), eq(gameMoves.isValid, true)));
+          
+          await db.update(gamePlayers)
+            .set({ progress: botValidMoves.length })
+            .where(eq(gamePlayers.id, botPlayer.id));
+        }
+        
+        const totalValidMoves = allValidMoves.length + (isValid ? 1 : 0);
+        
+        if (totalValidMoves === 25) {
+          const finishedAt = new Date();
+          const duration = Math.floor((finishedAt.getTime() - new Date(session.createdAt!).getTime()) / 1000);
+          const players = await db.select().from(gamePlayers).where(eq(gamePlayers.sessionId, input.sessionId));
+          const allMoves = await db
+            .select()
+            .from(gameMoves)
+            .where(and(eq(gameMoves.sessionId, input.sessionId), eq(gameMoves.isValid, true)));
+          
+          const playersMovesCount = new Map<string | null, number>();
+          for (const move of allMoves) {
+            playersMovesCount.set(move.userId, (playersMovesCount.get(move.userId) || 0) + 1);
+          }
+          
+          let winnerId: string | null = null;
+          let maxMoves = 0;
+          for (const [playerId, movesCount] of playersMovesCount) {
+            if (movesCount > maxMoves) {
+              maxMoves = movesCount;
+              winnerId = playerId;
+            }
+          }
+          
+          await db.update(gameSessions).set({ status: 'finished', winnerId, finishedAt }).where(eq(gameSessions.id, input.sessionId));
+          
+          if (winnerId !== null) {
+            const [userStats] = await db.select().from(users).where(eq(users.id, winnerId));
+            const currentWins = (userStats?.wins || 0) + 1;
+            const currentBestTime = userStats?.bestTime || duration;
+            const newBestTime = duration < currentBestTime ? duration : currentBestTime;
+            await db.update(users).set({ wins: currentWins, bestTime: newBestTime }).where(eq(users.id, winnerId));
+          }
+          
+          const humanPlayers = players.filter(p => !p.isBot);
+          for (const player of humanPlayers) {
+            const playerMovesCount = playersMovesCount.get(player.userId) || 0;
+            const isWinner = winnerId === player.userId;
+            
+            await db.insert(matchHistory).values({
+              sessionId: input.sessionId,
+              players: [{
+                id: player.userId,
+                username: player.userId === 'bot_system' ? 'Бот' : `Игрок ${player.userId?.slice(0, 4)}`,
+                color: player.color,
+                errors: player.errors || 0,
+                completed: true,
+                progress: playerMovesCount,
+              }],
+              winnerId: isWinner ? player.userId! : (winnerId === null ? 'bot' : 'opponent'),
+              duration,
+            });
           }
         }
         
-        await db.update(gameSessions).set({ status: 'finished', winnerId, finishedAt }).where(eq(gameSessions.id, input.sessionId));
-        
-        if (winnerId !== null) {
-          const [userStats] = await db.select().from(users).where(eq(users.id, winnerId));
-          const currentWins = (userStats?.wins || 0) + 1;
-          const currentBestTime = userStats?.bestTime || duration;
-          const newBestTime = duration < currentBestTime ? duration : currentBestTime;
-          await db.update(users).set({ wins: currentWins, bestTime: newBestTime }).where(eq(users.id, winnerId));
-        }
-        
-        const humanPlayers = players.filter(p => !p.isBot);
-        for (const player of humanPlayers) {
-          const playerMovesCount = playersMovesCount.get(player.userId) || 0;
-          const isWinner = winnerId === player.userId;
-          
-          await db.insert(matchHistory).values({
-            sessionId: input.sessionId,
-            players: [{
-              id: player.userId,
-              username: player.userId === 'bot_system' ? 'Бот' : `Игрок ${player.userId?.slice(0, 4)}`,
-              color: player.color,
-              errors: player.errors || 0,
-              completed: true,
-              progress: playerMovesCount,
-            }],
-            winnerId: isWinner ? player.userId! : (winnerId === null ? 'bot' : 'opponent'),
-            duration,
-          });
-        }
+        return { success: true, number: numberToTake, isValid };
+      } catch (error) {
+        console.error('makeBotMove error:', error);
+        return { success: false };
       }
-      
-      return { success: true, number: numberToTake, isValid };
-    } catch (error) {
-      console.error('makeBotMove error:', error);
-      return { success: false };
-    }
-  }),
+    }),
   
   getGameState: protectedProcedure.input(z.object({ sessionId: z.number() })).query(async ({ input }) => {
     const [session] = await db.select().from(gameSessions).where(eq(gameSessions.id, input.sessionId));

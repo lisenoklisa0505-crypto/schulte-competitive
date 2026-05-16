@@ -26,7 +26,6 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
   const [myErrors, setMyErrors] = useState(0);
   const [myProgress, setMyProgress] = useState(0);
   const [pendingMove, setPendingMove] = useState<number | null>(null);
-  const [isBotThinking, setIsBotThinking] = useState(false);
 
   const { data: stateRaw, refetch } = trpc.game.getGameState.useQuery(
     { sessionId },
@@ -80,7 +79,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
         setMyProgress(currentPlayer.progress || 0);
       }
       
-      if (pendingMove !== null) {
+      if (pendingMove !== null && state.currentNumber !== currentNumber) {
         setPendingMove(null);
       }
     }
@@ -101,7 +100,7 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     router.push('/rooms');
   };
 
-  // Обработка клика по ячейке - без alert
+  // Обработка клика по ячейке
   const handleCellClick = async (number: number) => {
     if (myMoves.has(number)) return;
     if (takenNumbers[number]) return;
@@ -149,43 +148,43 @@ export default function GameBoard({ sessionId, userId, playerColor }: Props) {
     }
   };
 
-  // Бот - исправленный эффект
+  // Ход бота с человеческой задержкой
   useEffect(() => {
     const hasBot = players?.some((p: any) => p.isBot);
-    
+
     if (!hasBot) return;
     if (gameStatus !== 'active') return;
     if (winner) return;
     if (currentNumber > 25) return;
-    if (isBotThinking) return;
-    
-    const timeout = setTimeout(async () => {
+
+    let cancelled = false;
+
+    const botMove = async () => {
       try {
-        setIsBotThinking(true);
-        
-        const result = await makeBotMove.mutateAsync({
-          sessionId,
-        });
-        
-        if (result?.success && result.number) {
-          setTakenNumbers(prev => ({
-            ...prev,
-            [result.number]: '#4ECDC4',
-          }));
-          
-          if (result.isValid) {
-            setCurrentNumber(prev => prev + 1);
-          }
+        // Имитация реакции человека: 0.7 - 3.2 секунды
+        const reactionTime = Math.random() * 2500 + 700;
+        await new Promise((r) => setTimeout(r, reactionTime));
+
+        if (cancelled) return;
+
+        const result = await makeBotMove.mutateAsync({ sessionId });
+
+        if (cancelled) return;
+
+        if (result?.success) {
+          await refetch();
         }
       } catch (err) {
         console.error('Bot move failed:', err);
-      } finally {
-        setIsBotThinking(false);
       }
-    }, 350);
-    
-    return () => clearTimeout(timeout);
-  }, [currentNumber, gameStatus, players, winner, isBotThinking, sessionId, makeBotMove]);
+    };
+
+    botMove();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentNumber, gameStatus, winner, sessionId, makeBotMove, refetch, players]);
 
   // Проверка загрузки
   if (!grid || grid.length === 0) {
