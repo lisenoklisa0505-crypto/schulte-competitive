@@ -35,6 +35,7 @@ interface GameState {
 export default function GameBoard({ sessionId, userId }: Props) {
   const router = useRouter();
   const [takenNumbers, setTakenNumbers] = useState<Record<number, string>>({});
+  const [myMoves, setMyMoves] = useState<Set<number>>(new Set());
   const [gameStatus, setGameStatus] = useState<string>('waiting');
   const [winner, setWinner] = useState<string | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -135,18 +136,50 @@ export default function GameBoard({ sessionId, userId }: Props) {
     router.push('/rooms');
   };
 
+  // Обработка клика по ячейке с оптимистичным обновлением (мгновенно)
   const handleCellClick = async (number: number): Promise<void> => {
+    if (myMoves.has(number)) return;
     if (takenNumbers[number]) return;
     if (gameStatus !== 'active') return;
-
+    
+    // МГНОВЕННОЕ оптимистичное обновление UI
+    setTakenNumbers(prev => ({ ...prev, [number]: myColor }));
+    setMyMoves(prev => new Set(prev).add(number));
+    
     try {
       const result = await makeMove.mutateAsync({ sessionId, number });
       if (result.valid) {
+        setMyProgress(prev => prev + 1);
+        setCurrentNumber(prev => prev + 1);
         await refetch();
-      } else if (result.message) {
-        console.log(result.message);
+      } else {
+        // Откат при ошибке
+        setTakenNumbers(prev => {
+          const newObj = { ...prev };
+          delete newObj[number];
+          return newObj;
+        });
+        setMyMoves(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(number);
+          return newSet;
+        });
+        setMyErrors(prev => prev + 1);
+        if (result.message) console.log(result.message);
       }
     } catch (err) {
+      // Откат при ошибке
+      setTakenNumbers(prev => {
+        const newObj = { ...prev };
+        delete newObj[number];
+        return newObj;
+      });
+      setMyMoves(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(number);
+        return newSet;
+      });
+      setMyErrors(prev => prev + 1);
       console.error('Move error:', err);
     }
   };
@@ -221,7 +254,6 @@ export default function GameBoard({ sessionId, userId }: Props) {
     return `Победил: Игрок ${winner.slice(0, 8)}`;
   };
 
-  // Короткий ID для отображения
   const shortSessionId = sessionId.slice(0, 8);
 
   return (
@@ -341,7 +373,7 @@ export default function GameBoard({ sessionId, userId }: Props) {
                 {grid.flat().map((num: number, idx: number) => {
                   const cellColor = takenNumbers[num];
                   const isCurrent = num === currentNumber;
-                  const isDisabled = !!cellColor || isFinished || gameStatus !== 'active';
+                  const isDisabled = !!cellColor || myMoves.has(num) || isFinished || gameStatus !== 'active';
                   return (
                     <button
                       key={idx}

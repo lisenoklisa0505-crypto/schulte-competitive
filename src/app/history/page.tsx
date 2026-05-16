@@ -16,12 +16,13 @@ interface LeaderboardPlayer {
 
 export default function HistoryPage() {
   const { data: session } = useSession();
-  const { data: historyData, isLoading } = trpc.game.getMatchHistory.useQuery(undefined, {
+  const { data: historyData, isLoading: historyLoading, refetch: refetchHistory } = trpc.game.getMatchHistory.useQuery(undefined, {
     enabled: !!session,
+    refetchInterval: 5000, // Обновляем историю каждые 5 секунд
   });
-  const { data: leaderboard } = trpc.game.getLeaderboard.useQuery(undefined, {
+  const { data: leaderboard, isLoading: leaderboardLoading, refetch: refetchLeaderboard } = trpc.game.getLeaderboard.useQuery(undefined, {
     enabled: !!session,
-    refetchInterval: 5000, // Синхронизация с рейтингом каждые 5 секунд
+    refetchInterval: 5000, // Обновляем рейтинг каждые 5 секунд (синхронизация!)
   });
 
   const [matches, setMatches] = useState<any[]>([]);
@@ -102,7 +103,7 @@ export default function HistoryPage() {
     return `${index + 1}`;
   };
 
-  if (isLoading) {
+  if (historyLoading || leaderboardLoading) {
     return (
       <div className="page">
         <Header />
@@ -173,7 +174,6 @@ export default function HistoryPage() {
               })}
             </div>
             
-            {/* Показываем место пользователя, ТОЛЬКО если он НЕ в топ-3 */}
             {!isUserInTop && userRank && (
               <div className="user-rank">
                 <div className="rank-line">
@@ -184,7 +184,6 @@ export default function HistoryPage() {
               </div>
             )}
             
-            {/* Если пользователь в топ-3, просто показываем подпись */}
             {isUserInTop && userRank && (
               <div className="user-in-top-note">
                 <span>📌 Ваше место — #{userRank.position}</span>
