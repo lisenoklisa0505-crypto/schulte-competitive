@@ -17,27 +17,32 @@ export default function CreateGameModal({ isOpen, onClose }: Props) {
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState('');
   
   const createGame = trpc.game.createGame.useMutation();
   const startBotGame = trpc.game.startBotGame.useMutation();
 
   const handleSubmit = async () => {
+    setError('');
     setIsCreating(true);
+    
     try {
       if (gameMode === 'bot') {
         const result = await startBotGame.mutateAsync();
         onClose();
         router.push(`/game/${result.sessionId}`);
       } else {
+        // Валидация названия комнаты
         if (!roomName.trim()) {
-          alert('Введите название комнаты');
+          setError('Пожалуйста, введите название комнаты');
           setIsCreating(false);
           return;
         }
+        
         const result = await createGame.mutateAsync({ 
           maxPlayers: maxPlayers, 
           withBot: false,
-          name: roomName,
+          name: roomName.trim(),
           isPrivate: isPrivate,
           password: isPrivate ? password : undefined
         });
@@ -45,11 +50,12 @@ export default function CreateGameModal({ isOpen, onClose }: Props) {
         setRoomName('');
         setIsPrivate(false);
         setPassword('');
+        setError('');
         router.push(`/game/${result.sessionId}`);
       }
     } catch (error) {
       console.error('Create game error:', error);
-      alert('Ошибка создания игры: ' + (error as Error).message);
+      setError((error as Error).message || 'Ошибка создания игры');
     } finally {
       setIsCreating(false);
     }
@@ -79,11 +85,30 @@ export default function CreateGameModal({ isOpen, onClose }: Props) {
       }}>
         <h2 style={{ fontSize: '24px', marginBottom: '16px', color: 'white' }}>Создание игры</h2>
         
+        {/* Ошибка */}
+        {error && (
+          <div style={{
+            background: 'rgba(239,68,68,0.1)',
+            border: '1px solid #ef4444',
+            borderRadius: '12px',
+            padding: '12px',
+            marginBottom: '20px',
+            color: '#ef4444',
+            fontSize: '14px',
+            textAlign: 'center'
+          }}>
+            {error}
+          </div>
+        )}
+        
         <div style={{ marginBottom: '24px' }}>
           <label style={{ display: 'block', marginBottom: '8px', color: '#cfd3ff' }}>Режим игры</label>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
-              onClick={() => setGameMode('multiplayer')}
+              onClick={() => {
+                setGameMode('multiplayer');
+                setError('');
+              }}
               style={{
                 flex: 1,
                 padding: '12px',
@@ -97,7 +122,10 @@ export default function CreateGameModal({ isOpen, onClose }: Props) {
               👥 С игроками
             </button>
             <button
-              onClick={() => setGameMode('bot')}
+              onClick={() => {
+                setGameMode('bot');
+                setError('');
+              }}
               style={{
                 flex: 1,
                 padding: '12px',
@@ -120,14 +148,17 @@ export default function CreateGameModal({ isOpen, onClose }: Props) {
               <input
                 type="text"
                 value={roomName}
-                onChange={(e) => setRoomName(e.target.value)}
+                onChange={(e) => {
+                  setRoomName(e.target.value);
+                  if (error) setError('');
+                }}
                 placeholder="Введите название"
                 style={{
                   width: '100%',
                   padding: '12px',
                   borderRadius: '12px',
                   background: '#0b0f1a',
-                  border: '1px solid #2a2f45',
+                  border: error && !roomName.trim() ? '1px solid #ef4444' : '1px solid #2a2f45',
                   color: 'white'
                 }}
               />
@@ -217,7 +248,11 @@ export default function CreateGameModal({ isOpen, onClose }: Props) {
             {isCreating ? 'Создание...' : (gameMode === 'bot' ? 'Играть с ботом' : 'Создать комнату')}
           </button>
           <button
-            onClick={onClose}
+            onClick={() => {
+              onClose();
+              setError('');
+              setRoomName('');
+            }}
             style={{
               flex: 1,
               padding: '12px',

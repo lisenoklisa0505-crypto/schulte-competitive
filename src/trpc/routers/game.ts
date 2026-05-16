@@ -11,8 +11,6 @@ import {
 import { eq, and, desc, sql, count } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { generateSchulteTable } from '@/lib/schulte';
-import { sseBus } from '@/lib/sse-bus';
-import { checkRateLimit } from '@/lib/rate-limit';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Константы
@@ -36,7 +34,51 @@ interface MoveResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// performMove — атомарная обработка хода внутри транзакции
+// Rate Limiter (in-memory sliding window)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RateLimitEntry {
+  timestamps: number[];
+  lastAccess: number;
+}
+
+const rateLimitStore = new Map<string, RateLimitEntry>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitStore.entries()) {
+    if (now - entry.lastAccess > 120_000) {
+      rateLimitStore.delete(key);
+    }
+  }
+}, 60_000);
+
+function checkRateLimit(key: string, limit = 8, windowMs = 3000): { allowed: boolean; remaining: number; resetAt: number } {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+
+  let entry = rateLimitStore.get(key);
+  if (!entry) {
+    entry = { timestamps: [], lastAccess: now };
+    rateLimitStore.set(key, entry);
+  }
+
+  entry.timestamps = entry.timestamps.filter(t => t > windowStart);
+  entry.lastAccess = now;
+
+  const resetAt = (entry.timestamps[0] ?? now) + windowMs;
+  const remaining = Math.max(0, limit - entry.timestamps.length);
+
+  if (entry.timestamps.length >= limit) {
+    return { allowed: false, remaining: 0, resetAt };
+  }
+
+  entry.timestamps.push(now);
+  return { allowed: true, remaining: remaining - 1, resetAt };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// performMove — обработка хода (без транзакций для совместимости с Neon HTTP)
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function performMove(
@@ -45,146 +87,152 @@ async function performMove(
   number: number,
   isBot: boolean = false,
 ): Promise<MoveResult> {
-  return db.transaction(async tx => {
-    // Блокируем строку сессии на время транзакции (защита от гонок)
-    const [session] = await tx
-      .select()
-      .from(gameSessions)
-      .where(eq(gameSessions.id, sessionId))
-      .for('update');
+  // Блокируем сессию для чтения (FOR UPDATE)
+  const [session] = await db
+    .select()
+    .from(gameSessions)
+    .where(eq(gameSessions.id, sessionId))
+    .for('update');
 
-    if (!session || session.status !== 'active') {
-      return { valid: false, message: 'Игра не активна' };
-    }
+  if (!session || session.status !== 'active') {
+    return { valid: false, message: 'Игра не активна' };
+  }
 
-    const players = await tx
-      .select()
-      .from(gamePlayers)
-      .where(eq(gamePlayers.sessionId, sessionId));
+  const players = await db
+    .select()
+    .from(gamePlayers)
+    .where(eq(gamePlayers.sessionId, sessionId));
 
-    const currentPlayer = players.find(p =>
-      isBot ? p.isBot : p.userId === userId,
-    );
+  const currentPlayer = players.find(p =>
+    isBot ? p.isBot : p.userId === userId,
+  );
 
-    if (!currentPlayer) {
-      return { valid: false, message: 'Игрок не найден' };
-    }
+  if (!currentPlayer) {
+    return { valid: false, message: 'Игрок не найден' };
+  }
 
-    // Считаем только валидные ходы — они определяют следующее нужное число
-    const validMoves = await tx
-      .select()
-      .from(gameMoves)
-      .where(and(eq(gameMoves.sessionId, sessionId), eq(gameMoves.isValid, true)));
+  const validMoves = await db
+    .select()
+    .from(gameMoves)
+    .where(and(eq(gameMoves.sessionId, sessionId), eq(gameMoves.isValid, true)));
 
-    const nextNumber = validMoves.length + 1;
+  const nextNumber = validMoves.length + 1;
 
-    if (nextNumber > MAX_NUMBER) {
-      return { valid: false, message: 'Игра уже завершена' };
-    }
+  if (nextNumber > MAX_NUMBER) {
+    return { valid: false, message: 'Игра уже завершена' };
+  }
 
-    // Неверное число
-    if (number !== nextNumber) {
-      // Невалидные ходы бота не пишем в БД: уникальный индекс (sessionId, number)
-      // распространяется на все записи — повторная попытка того же числа упадёт с ошибкой.
-      if (!isBot) {
-        await tx.insert(gameMoves).values({
-          sessionId,
-          userId,
-          number,
-          isValid: false,
-          timestamp: new Date(),
-        });
-      }
-      await tx
-        .update(gamePlayers)
-        .set({ errors: (currentPlayer.errors ?? 0) + 1 })
-        .where(eq(gamePlayers.id, currentPlayer.id));
-
-      return { valid: false, message: `Нужно нажать ${nextNumber}` };
-    }
-
-    // Проверяем, не занято ли число (явная проверка вместо try/catch на уникальный индекс)
-    const alreadyTaken = validMoves.find(m => m.number === number);
-    if (alreadyTaken) {
-      return { valid: false, message: `Число ${number} уже занято` };
-    }
-
-    await tx.insert(gameMoves).values({
-      sessionId,
-      userId: isBot ? null : userId,
-      number,
-      isValid: true,
-      timestamp: new Date(),
-    });
-
-    const newValidCount = validMoves.length + 1;
-    await tx
-      .update(gamePlayers)
-      .set({ progress: newValidCount })
-      .where(eq(gamePlayers.id, currentPlayer.id));
-
-    // ── Проверка завершения игры ────────────────────────────────────────────
-    let isFinished = false;
-    let winnerId: string | null = null;
-
-    if (newValidCount === MAX_NUMBER) {
-      isFinished = true;
-      // Для бота userId=null — храним строку 'bot', чтобы не путать с NULL в БД
-      winnerId = isBot ? 'bot' : userId;
-
-      const finishedAt = new Date();
-      const duration = Math.floor(
-        (finishedAt.getTime() - new Date(session.startedAt!).getTime()) / 1000,
-      );
-
-      await tx
-        .update(gameSessions)
-        .set({ status: 'finished', winnerId, finishedAt })
-        .where(eq(gameSessions.id, sessionId));
-
-      // Обновляем статистику только живых победителей
-      if (!isBot && winnerId) {
-        const [userStats] = await tx
-          .select()
-          .from(users)
-          .where(eq(users.id, winnerId));
-
-        const newWins = (userStats?.wins ?? 0) + 1;
-        const prev = userStats?.bestTime ?? duration;
-        const newBest = duration < prev ? duration : prev;
-
-        await tx
-          .update(users)
-          .set({ wins: newWins, bestTime: newBest })
-          .where(eq(users.id, winnerId));
-      }
-
-      const humanPlayers = players.filter(p => !p.isBot);
-      await tx.insert(matchHistory).values({
+  // Неверное число
+  if (number !== nextNumber) {
+    if (!isBot) {
+      await db.insert(gameMoves).values({
         sessionId,
-        players: humanPlayers.map(p => ({
-          id: p.userId,
-          username:
-            p.userId === userId ? 'Вы' : `Игрок ${p.userId?.slice(0, 4)}`,
-          color: p.color,
-          errors: p.errors ?? 0,
-          completed: p.userId === userId && !isBot,
-          progress:
-            p.userId === userId ? (isBot ? p.progress ?? 0 : MAX_NUMBER) : (p.progress ?? 0),
-        })),
-        winnerId: winnerId ?? 'bot',
-        duration,
+        userId,
+        number,
+        isValid: false,
+        timestamp: new Date(),
       });
     }
+    await db
+      .update(gamePlayers)
+      .set({ errors: (currentPlayer.errors ?? 0) + 1 })
+      .where(eq(gamePlayers.id, currentPlayer.id));
 
-    return {
-      valid: true,
-      number,
-      playerColor: currentPlayer.color,
-      isFinished,
-      winnerId,
-    };
+    return { valid: false, message: `Нужно нажать ${nextNumber}` };
+  }
+
+  // Проверяем, не занято ли число
+  const alreadyTaken = validMoves.find(m => m.number === number);
+  if (alreadyTaken) {
+    if (!isBot) {
+      await db.insert(gameMoves).values({
+        sessionId,
+        userId,
+        number,
+        isValid: false,
+        timestamp: new Date(),
+      });
+    }
+    await db
+      .update(gamePlayers)
+      .set({ errors: (currentPlayer.errors ?? 0) + 1 })
+      .where(eq(gamePlayers.id, currentPlayer.id));
+    return { valid: false, message: `Число ${number} уже занято` };
+  }
+
+  await db.insert(gameMoves).values({
+    sessionId,
+    userId: isBot ? null : userId,
+    number,
+    isValid: true,
+    timestamp: new Date(),
   });
+
+  const newValidCount = validMoves.length + 1;
+  await db
+    .update(gamePlayers)
+    .set({ progress: newValidCount })
+    .where(eq(gamePlayers.id, currentPlayer.id));
+
+  // ── Проверка завершения игры ────────────────────────────────────────────
+  let isFinished = false;
+  let winnerId: string | null = null;
+
+  if (newValidCount === MAX_NUMBER) {
+    isFinished = true;
+    winnerId = isBot ? 'bot' : userId;
+
+    const finishedAt = new Date();
+    const duration = Math.floor(
+      (finishedAt.getTime() - new Date(session.startedAt!).getTime()) / 1000,
+    );
+
+    await db
+      .update(gameSessions)
+      .set({ status: 'finished', winnerId, finishedAt })
+      .where(eq(gameSessions.id, sessionId));
+
+    if (!isBot && winnerId) {
+      const [userStats] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, winnerId));
+
+      const newWins = (userStats?.wins ?? 0) + 1;
+      const prev = userStats?.bestTime ?? duration;
+      const newBest = duration < prev ? duration : prev;
+
+      await db
+        .update(users)
+        .set({ wins: newWins, bestTime: newBest })
+        .where(eq(users.id, winnerId));
+    }
+
+    const humanPlayers = players.filter(p => !p.isBot);
+    await db.insert(matchHistory).values({
+      sessionId,
+      players: humanPlayers.map(p => ({
+        id: p.userId,
+        username:
+          p.userId === userId ? 'Вы' : `Игрок ${p.userId?.slice(0, 4)}`,
+        color: p.color,
+        errors: p.errors ?? 0,
+        completed: p.userId === userId && !isBot,
+        progress:
+          p.userId === userId ? (isBot ? p.progress ?? 0 : MAX_NUMBER) : (p.progress ?? 0),
+      })),
+      winnerId: winnerId ?? 'bot',
+      duration,
+    });
+  }
+
+  return {
+    valid: true,
+    number,
+    playerColor: currentPlayer.color,
+    isFinished,
+    winnerId,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,7 +253,6 @@ export const gameRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      // Не даём создать вторую активную игру
       const existing = await db
         .select({ id: gameSessions.id })
         .from(gameSessions)
@@ -225,8 +272,6 @@ export const gameRouter = router({
       }
 
       const tableData = generateSchulteTable(TABLE_SIZE);
-
-      // ① UUID генерируется автоматически через default gen_random_uuid() в схеме
       const [newSession] = await db
         .insert(gameSessions)
         .values({
@@ -321,12 +366,6 @@ export const gameRouter = router({
       },
     ]);
 
-    // ② Уведомляем SSE (хотя подписчиков ещё нет — клиент подключится позже)
-    sseBus.publish(newSession.id, {
-      type: 'start',
-      payload: { sessionId: newSession.id, startedAt: now.getTime() },
-    });
-
     return { sessionId: newSession.id, startedAt: now.getTime() };
   }),
 
@@ -335,7 +374,6 @@ export const gameRouter = router({
   joinGame: protectedProcedure
     .input(
       z.object({
-        // ① sessionId теперь UUID-строка
         sessionId: z.string().uuid(),
         password: z.string().optional(),
       }),
@@ -381,112 +419,119 @@ export const gameRouter = router({
         isBot: false,
       });
 
-      // ② SSE: уведомляем уже подключённых игроков о новом участнике
-      sseBus.publish(input.sessionId, {
-        type: 'join',
-        payload: { userId: ctx.user.id },
-      });
-
       const newCount = humanPlayers.length + 1;
       if (newCount >= 2) {
         await db
           .update(gameSessions)
           .set({ status: 'active', startedAt: new Date() })
           .where(eq(gameSessions.id, input.sessionId));
-
-        sseBus.publish(input.sessionId, {
-          type: 'start',
-          payload: { sessionId: input.sessionId },
-        });
       }
 
       return { success: true };
     }),
 
-  // ── Выход из комнаты ─────────────────────────────────────────────────────
+  // ── Выход из комнаты (с фиксацией поражения и передачей прав хоста) ───────
 
   exitGame: protectedProcedure
     .input(z.object({ sessionId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      return db.transaction(async tx => {
-        const [session] = await tx
-          .select()
-          .from(gameSessions)
-          .where(eq(gameSessions.id, input.sessionId));
+      const [session] = await db
+        .select()
+        .from(gameSessions)
+        .where(eq(gameSessions.id, input.sessionId));
 
-        if (!session) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Сессия не найдена' });
-        }
-        if (session.status === 'finished') return { success: true };
+      if (!session) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Сессия не найдена' });
+      }
 
-        const players = await tx
-          .select()
-          .from(gamePlayers)
-          .where(eq(gamePlayers.sessionId, input.sessionId));
+      if (session.status === 'finished') return { success: true };
 
-        const currentPlayer = players.find(
-          p => p.userId === ctx.user.id && !p.isBot,
+      const players = await db
+        .select()
+        .from(gamePlayers)
+        .where(eq(gamePlayers.sessionId, input.sessionId));
+
+      const currentPlayer = players.find(
+        p => p.userId === ctx.user.id && !p.isBot,
+      );
+
+      if (!currentPlayer) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Вы не участник игры' });
+      }
+
+      // Если игра активна — фиксируем поражение
+      if (session.status === 'active') {
+        const finishedAt = new Date();
+        const duration = Math.floor(
+          (finishedAt.getTime() - new Date(session.startedAt!).getTime()) / 1000,
         );
-        if (!currentPlayer) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Вы не участник игры' });
-        }
 
-        await tx
-          .delete(gamePlayers)
-          .where(eq(gamePlayers.id, currentPlayer.id));
+        await db.insert(matchHistory).values({
+          sessionId: input.sessionId,
+          players: [
+            {
+              id: ctx.user.id,
+              username: 'Вы',
+              color: currentPlayer.color,
+              errors: currentPlayer.errors ?? 0,
+              completed: false,
+              progress: currentPlayer.progress ?? 0,
+            },
+          ],
+          winnerId: 'opponent',
+          duration,
+        });
+      }
 
-        if (session.status === 'active') {
-          const finishedAt = new Date();
-          const duration = Math.floor(
-            (finishedAt.getTime() - new Date(session.startedAt!).getTime()) / 1000,
-          );
+      // Удаляем игрока из игры
+      await db
+        .delete(gamePlayers)
+        .where(eq(gamePlayers.id, currentPlayer.id));
 
-          await tx.insert(matchHistory).values({
-            sessionId: input.sessionId,
-            players: [
-              {
-                id: ctx.user.id,
-                username: 'Вы',
-                color: currentPlayer.color,
-                errors: currentPlayer.errors ?? 0,
-                completed: false,
-                progress: currentPlayer.progress ?? 0,
-              },
-            ],
-            winnerId: 'opponent',
-            duration,
-          });
-        }
+      // Проверяем, остались ли игроки в сессии
+      const remaining = await db
+        .select()
+        .from(gamePlayers)
+        .where(eq(gamePlayers.sessionId, input.sessionId));
 
-        const remaining = await tx
-          .select()
-          .from(gamePlayers)
-          .where(eq(gamePlayers.sessionId, input.sessionId));
+      const humanRemaining = remaining.filter(p => !p.isBot);
 
-        if (remaining.length === 0) {
-          await tx.delete(gameMoves).where(eq(gameMoves.sessionId, input.sessionId));
-          await tx.delete(gameSessions).where(eq(gameSessions.id, input.sessionId));
-          return { success: true, roomDeleted: true };
-        }
+      // Если никого не осталось — удаляем сессию
+      if (remaining.length === 0) {
+        await db.delete(gameMoves).where(eq(gameMoves.sessionId, input.sessionId));
+        await db.delete(gameSessions).where(eq(gameSessions.id, input.sessionId));
+        return { success: true, roomDeleted: true };
+      }
 
-        if (session.status === 'waiting') {
+      // Если игра была в ожидании (waiting) и остались игроки
+      if (session.status === 'waiting' && remaining.length > 0) {
+        // Если вышел хост (order === 0) и остались другие игроки
+        if (currentPlayer.order === 0 && humanRemaining.length > 0) {
+          // Находим нового хоста (игрока с минимальным order)
+          const sorted = [...humanRemaining].sort((a, b) => a.order - b.order);
+          const newHost = sorted[0];
+          
+          // Обновляем порядок всех оставшихся игроков
+          const allRemainingSorted = [...remaining].sort((a, b) => a.order - b.order);
+          for (let i = 0; i < allRemainingSorted.length; i++) {
+            await db
+              .update(gamePlayers)
+              .set({ order: i })
+              .where(eq(gamePlayers.id, allRemainingSorted[i].id));
+          }
+        } else {
+          // Просто перенумеровываем оставшихся игроков
           const sorted = [...remaining].sort((a, b) => a.order - b.order);
           for (let i = 0; i < sorted.length; i++) {
-            await tx
+            await db
               .update(gamePlayers)
               .set({ order: i })
               .where(eq(gamePlayers.id, sorted[i].id));
           }
         }
+      }
 
-        // ② Уведомляем оставшихся игроков
-        sseBus.publish(input.sessionId, {
-          type: 'leave',
-          payload: { userId: ctx.user.id },
-        });
-
-        return { success: true };
-      });
+      return { success: true };
     }),
 
   // ── Ход игрока ────────────────────────────────────────────────────────────
@@ -494,9 +539,8 @@ export const gameRouter = router({
   makeMove: protectedProcedure
     .input(z.object({ sessionId: z.string().uuid(), number: z.number().min(1).max(25) }))
     .mutation(async ({ input, ctx }) => {
-      // ④ Rate limiting: 8 ходов за 3 секунды
       const rlKey = `${ctx.user.id}:${input.sessionId}`;
-      const rl = checkRateLimit(rlKey, 8, 3_000);
+      const rl = checkRateLimit(rlKey, 8, 3000);
 
       if (!rl.allowed) {
         throw new TRPCError({
@@ -511,19 +555,6 @@ export const gameRouter = router({
         input.number,
         false,
       );
-
-      // ② Публикуем событие хода в SSE (независимо от valid — клиент перезапросит состояние)
-      if (result.valid) {
-        sseBus.publish(input.sessionId, {
-          type: result.isFinished ? 'finish' : 'move',
-          payload: {
-            number: input.number,
-            userId: ctx.user.id,
-            color: result.playerColor,
-            winnerId: result.winnerId ?? null,
-          },
-        });
-      }
 
       return result;
     }),
@@ -573,7 +604,6 @@ export const gameRouter = router({
       const nextNumber = validMoves.length + 1;
       if (nextNumber > MAX_NUMBER) return { success: false };
 
-      // Бот ошибается с вероятностью 12%
       const willErr = Math.random() < 0.12;
       let pickedNumber = nextNumber;
 
@@ -587,19 +617,6 @@ export const gameRouter = router({
       }
 
       const result = await performMove(input.sessionId, null, pickedNumber, true);
-
-      if (result.valid) {
-        sseBus.publish(input.sessionId, {
-          type: result.isFinished ? 'finish' : 'move',
-          payload: {
-            number: pickedNumber,
-            userId: null,
-            isBot: true,
-            color: botPlayer.color,
-            winnerId: result.winnerId ?? null,
-          },
-        });
-      }
 
       return { success: result.valid, number: pickedNumber, isValid: result.valid };
     }),
@@ -671,22 +688,9 @@ export const gameRouter = router({
       };
     }),
 
-  // ── Список открытых комнат (③ JOIN вместо N+1) ───────────────────────────
+  // ── Список открытых комнат (JOIN вместо N+1) ──────────────────────────────
 
   getActiveSessions: protectedProcedure.query(async () => {
-    /**
-     * ③ Один запрос с LEFT JOIN + COUNT вместо N+1.
-     *
-     * Было:
-     *   SELECT sessions (20 строк)
-     *   + Promise.all(20 × SELECT gamePlayers WHERE sessionId = ?)  ← N+1
-     *
-     * Стало:
-     *   SELECT sessions
-     *   LEFT JOIN gamePlayers ON sessionId = sessions.id AND isBot = false
-     *   GROUP BY sessions.id
-     *   → один SQL-запрос
-     */
     const rows = await db
       .select({
         id: gameSessions.id,
@@ -694,7 +698,6 @@ export const gameRouter = router({
         status: gameSessions.status,
         isPrivate: gameSessions.isPrivate,
         maxPlayers: gameSessions.maxPlayers,
-        // COUNT только живых игроков (не ботов)
         playerCount: count(gamePlayers.id),
       })
       .from(gameSessions)
