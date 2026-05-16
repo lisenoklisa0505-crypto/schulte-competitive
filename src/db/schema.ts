@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer, jsonb, boolean, doublePrecision } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, jsonb, boolean, doublePrecision, uniqueIndex } from 'drizzle-orm/pg-core';
 
 export const users = pgTable("user", {
   id: text("id").primaryKey(),
@@ -56,10 +56,10 @@ export const gameSessions = pgTable("game_sessions", {
   password: text("password"),
   maxPlayers: integer("max_players").default(4),
   createdAt: timestamp("created_at").defaultNow(),
+  startedAt: timestamp("started_at"),
   finishedAt: timestamp("finished_at"),
 });
 
-// ТОЛЬКО ОДИН РАЗ! С progress
 export const gamePlayers = pgTable("game_players", {
   id: serial("id").primaryKey(),
   sessionId: integer("session_id").notNull().references(() => gameSessions.id, { onDelete: "cascade" }),
@@ -76,11 +76,13 @@ export const gamePlayers = pgTable("game_players", {
 export const gameMoves = pgTable("game_moves", {
   id: serial("id").primaryKey(),
   sessionId: integer("session_id").notNull().references(() => gameSessions.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull(),
+  userId: text("user_id"),
   number: integer("number").notNull(),
   timestamp: timestamp("timestamp").defaultNow(),
   isValid: boolean("is_valid").notNull(),
-});
+}, (table) => ({
+  uniqueValidNumber: uniqueIndex("unique_valid_number").on(table.sessionId, table.number),
+}));
 
 export const matchHistory = pgTable("match_history", {
   id: serial("id").primaryKey(),
