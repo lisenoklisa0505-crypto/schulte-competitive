@@ -9,6 +9,7 @@ import Header from '@/components/Header';
 
 interface LeaderboardPlayer {
   id: string;
+  name: string;
   username: string;
   wins: number;
   bestTime: number;
@@ -18,11 +19,11 @@ export default function HistoryPage() {
   const { data: session } = useSession();
   const { data: historyData, isLoading: historyLoading, refetch: refetchHistory } = trpc.game.getMatchHistory.useQuery(undefined, {
     enabled: !!session,
-    refetchInterval: 5000, // Обновляем историю каждые 5 секунд
+    refetchInterval: 5000,
   });
   const { data: leaderboard, isLoading: leaderboardLoading, refetch: refetchLeaderboard } = trpc.game.getLeaderboard.useQuery(undefined, {
     enabled: !!session,
-    refetchInterval: 5000, // Обновляем рейтинг каждые 5 секунд (синхронизация!)
+    refetchInterval: 5000,
   });
 
   const [matches, setMatches] = useState<any[]>([]);
@@ -53,21 +54,18 @@ export default function HistoryPage() {
   // Мини-рейтинг (синхронизируется с основным)
   useEffect(() => {
     if (leaderboard && Array.isArray(leaderboard) && session?.user) {
-      // Топ-3 игрока
       const top3 = leaderboard.slice(0, 3);
       setTopPlayers(top3);
       
-      // Проверяем, входит ли пользователь в топ-3
       const userInTop3 = top3.some((p: any) => p.id === session.user.id);
       setIsUserInTop(userInTop3);
       
-      // Находим место пользователя в общем рейтинге
       const userIndex = leaderboard.findIndex((p: any) => p.id === session.user.id);
       if (userIndex !== -1) {
         setUserRank({
           position: userIndex + 1,
           wins: leaderboard[userIndex].wins,
-          username: leaderboard[userIndex].username || 'Вы',
+          username: leaderboard[userIndex].username || leaderboard[userIndex].name || 'Вы',
         });
       } else {
         setUserRank({
@@ -103,6 +101,10 @@ export default function HistoryPage() {
     return `${index + 1}`;
   };
 
+  const getDisplayName = (player: LeaderboardPlayer) => {
+    return player.username || player.name || 'Игрок';
+  };
+
   if (historyLoading || leaderboardLoading) {
     return (
       <div className="page">
@@ -120,7 +122,6 @@ export default function HistoryPage() {
         <h1>История матчей</h1>
         <p className="sub">Все твои игры и результаты</p>
 
-        {/* Статистика */}
         <div className="stats-cards">
           <div className="stat-card"><div className="value">{stats.total}</div><div className="label">Матчи</div></div>
           <div className="stat-card"><div className="value">{stats.wins}</div><div className="label">Победы</div></div>
@@ -129,7 +130,6 @@ export default function HistoryPage() {
         </div>
 
         <div className="two-columns">
-          {/* Таблица с историей матчей */}
           <div className="table">
             <div className="head">
               <span>Дата</span>
@@ -157,7 +157,6 @@ export default function HistoryPage() {
             {matches.length === 0 && <div className="empty">Нет сыгранных матчей</div>}
           </div>
 
-          {/* Мини-рейтинг (топ-3 + место пользователя) */}
           <div className="mini-rating">
             <h3>🏆 Топ игроков</h3>
             
@@ -167,7 +166,7 @@ export default function HistoryPage() {
                 return (
                   <div key={player.id} className={`top-item ${isCurrentUser ? 'current' : ''}`}>
                     <span className="medal">{getMedal(idx)}</span>
-                    <span className="name">{player.username || 'Игрок'}</span>
+                    <span className="name">{getDisplayName(player)}</span>
                     <span className="wins">{player.wins} 🏆</span>
                   </div>
                 );

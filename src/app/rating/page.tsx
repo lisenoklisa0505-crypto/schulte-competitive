@@ -34,9 +34,11 @@ export default function RatingPage() {
 
   const formatTime = (seconds: number) => {
     if (!seconds || seconds === 0) return '—';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    if (mins > 0) return `${mins} мин ${secs} сек`;
+    // Если значение больше 60, считаем что это секунды
+    const secs = seconds > 60 ? seconds : Math.floor(seconds);
+    const mins = Math.floor(secs / 60);
+    const remainingSecs = secs % 60;
+    if (mins > 0) return `${mins} мин ${remainingSecs} сек`;
     return `${secs} сек`;
   };
 
@@ -94,6 +96,8 @@ export default function RatingPage() {
           {players.map((player, index) => {
             const isCurrentUser = session?.user?.id === player.id;
             const displayName = getDisplayName(player);
+            const wins = player.wins || 0;
+            const bestTime = player.bestTime || 0;
             
             return (
               <div 
@@ -129,8 +133,8 @@ export default function RatingPage() {
                   {isCurrentUser && <span style={{ fontSize: '11px', padding: '2px 8px', background: '#6a5cff', borderRadius: '20px' }}>Вы</span>}
                 </div>
                 
-                <div style={{ color: '#10b981', fontWeight: 'bold' }}>{player.wins || 0}</div>
-                <div style={{ color: '#fbbf24' }}>{formatTime(player.bestTime)}</div>
+                <div style={{ color: '#10b981', fontWeight: 'bold' }}>{wins}</div>
+                <div style={{ color: '#fbbf24' }}>{formatTime(bestTime)}</div>
               </div>
             );
           })}

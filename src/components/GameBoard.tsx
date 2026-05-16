@@ -48,9 +48,6 @@ export default function GameBoard({ sessionId, userId }: Props) {
   const [myColor, setMyColor] = useState<string>('#FF6B6B');
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [isProcessingMove, setIsProcessingMove] = useState<boolean>(false);
-  
-  // Локальная блокировка чисел, которые уже были нажаты (даже если сервер ещё не подтвердил)
-  const [locallyLockedNumbers, setLocallyLockedNumbers] = useState<Set<number>>(new Set());
 
   const botThinkingRef = useRef<boolean>(false);
   const currentNumberRef = useRef<number>(1);
@@ -59,10 +56,7 @@ export default function GameBoard({ sessionId, userId }: Props) {
 
   const { data: stateRaw, refetch } = trpc.game.getGameState.useQuery(
     { sessionId },
-    { 
-      refetchInterval: false,
-      enabled: true,
-    }
+    { refetchInterval: false }
   );
 
   const makeMove = trpc.game.makeMove.useMutation();
@@ -71,25 +65,17 @@ export default function GameBoard({ sessionId, userId }: Props) {
 
   const state = stateRaw as GameState | undefined;
 
-  // Таймер на основе серверного startedAt
+  // Таймер
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-
     if (gameStatus === 'active' && startedAt) {
-      const updateTimer = () => {
-        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-        setTimeElapsed(elapsed);
-      };
+      const updateTimer = () => setTimeElapsed(Math.floor((Date.now() - startedAt) / 1000));
       updateTimer();
       timerRef.current = setInterval(updateTimer, 1000);
     } else if (gameStatus === 'finished' && state?.finishedAt && startedAt) {
-      const elapsed = Math.floor((state.finishedAt - startedAt) / 1000);
-      setTimeElapsed(elapsed);
+      setTimeElapsed(Math.floor((state.finishedAt - startedAt) / 1000));
     }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [gameStatus, startedAt, state?.finishedAt]);
 
   const formatTime = (seconds: number): string => {
@@ -109,26 +95,21 @@ export default function GameBoard({ sessionId, userId }: Props) {
       if (state.table) setGrid(state.table);
       if (state.myColor) setMyColor(state.myColor);
 
-      const newCurrentNumber = state.currentNumber ?? 1;
-      if (newCurrentNumber !== currentNumberRef.current) {
-        currentNumberRef.current = newCurrentNumber;
-        setCurrentNumber(newCurrentNumber);
+      const newNumber = state.currentNumber ?? 1;
+      if (newNumber !== currentNumberRef.current) {
+        currentNumberRef.current = newNumber;
+        setCurrentNumber(newNumber);
       }
 
       if (state.startedAt && !startedAt) setStartedAt(state.startedAt);
 
-      const currentPlayer = state.players?.find(
-        (p: Player) => String(p.userId) === String(userId)
-      );
+      const currentPlayer = state.players?.find(p => String(p.userId) === String(userId));
       if (currentPlayer) {
         setMyErrors(currentPlayer.errors || 0);
         setMyProgress(currentPlayer.progress || 0);
       }
       
-      // Снимаем блокировку обработки
-      if (isProcessingMove) {
-        setIsProcessingMove(false);
-      }
+      setIsProcessingMove(false);
     }
   }, [state, userId, gameStatus, startedAt]);
 
@@ -137,27 +118,20 @@ export default function GameBoard({ sessionId, userId }: Props) {
     setHasCleanedUp(true);
     hasUnmountedRef.current = true;
     if (timerRef.current) clearInterval(timerRef.current);
-    try {
-      await exitGame.mutateAsync({ sessionId });
-    } catch (err) {
-      console.error('Exit error:', err);
-    }
+    try { await exitGame.mutateAsync({ sessionId }); } catch (err) { console.error(err); }
     router.push('/rooms');
   };
 
-  // Обработка клика по ячейке с МГНОВЕННОЙ локальной блокировкой
+  // Обработка клика - мгновенное обновление
   const handleCellClick = async (number: number): Promise<void> => {
-    // Защита от двойного клика
     if (isProcessingMove) return;
     if (myMoves.has(number)) return;
     if (takenNumbers[number]) return;
-    if (locallyLockedNumbers.has(number)) return;
     if (gameStatus !== 'active') return;
     
     setIsProcessingMove(true);
     
-    // МГНОВЕННО блокируем ячейку ЛОКАЛЬНО (даже для бота!)
-    setLocallyLockedNumbers(prev => new Set(prev).add(number));
+    // Мгновенное обновление UI
     setTakenNumbers(prev => ({ ...prev, [number]: myColor }));
     setMyMoves(prev => new Set(prev).add(number));
     setMyProgress(prev => prev + 1);
@@ -169,124 +143,68 @@ export default function GameBoard({ sessionId, userId }: Props) {
         await refetch();
       } else {
         // Откат при ошибке
-        setTakenNumbers(prev => {
-          const newObj = { ...prev };
-          delete newObj[number];
-          return newObj;
-        });
-        setMyMoves(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(number);
-          return newSet;
-        });
-        setLocallyLockedNumbers(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(number);
-          return newSet;
-        });
+        setTakenNumbers(prev => { const newObj = { ...prev }; delete newObj[number]; return newObj; });
+        setMyMoves(prev => { const newSet = new Set(prev); newSet.delete(number); return newSet; });
         setMyProgress(prev => prev - 1);
         setMyErrors(prev => prev + 1);
-        if (result.message) console.log(result.message);
       }
     } catch (err) {
-      // Откат при ошибке
-      setTakenNumbers(prev => {
-        const newObj = { ...prev };
-        delete newObj[number];
-        return newObj;
-      });
-      setMyMoves(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(number);
-        return newSet;
-      });
-      setLocallyLockedNumbers(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(number);
-        return newSet;
-      });
+      setTakenNumbers(prev => { const newObj = { ...prev }; delete newObj[number]; return newObj; });
+      setMyMoves(prev => { const newSet = new Set(prev); newSet.delete(number); return newSet; });
       setMyProgress(prev => prev - 1);
       setMyErrors(prev => prev + 1);
-      console.error('Move error:', err);
     } finally {
       setIsProcessingMove(false);
     }
   };
 
-  // Ход бота с проверкой локальной блокировки
-  const runBotMove = useCallback(async (): Promise<(() => void) | undefined> => {
-    if (isProcessingMove) return;
+  // Ход бота - НЕ блокирует всю таблицу, только проверяет конкретное число
+  const runBotMove = useCallback(async () => {
     if (botThinkingRef.current) return;
     
-    // Получаем следующее число, которое должен нажать бот
     const targetNumber = currentNumberRef.current;
-    
-    // Если число уже локально заблокировано (игрок уже нажал), бот не ходит
-    if (locallyLockedNumbers.has(targetNumber)) return;
+    // Если число уже занято игроком или кем-то ещё - бот не ходит
+    if (myMoves.has(targetNumber)) return;
+    if (takenNumbers[targetNumber]) return;
     
     botThinkingRef.current = true;
-
-    let cancelled = false;
-
     try {
-      // Задержка бота 800-1500 мс
-      const delay = 800 + Math.random() * 700;
+      const delay = 1000 + Math.random() * 1000;
       await new Promise(resolve => setTimeout(resolve, delay));
-      if (cancelled) return;
-      
       // Повторная проверка после задержки
-      if (locallyLockedNumbers.has(targetNumber)) return;
-
+      if (myMoves.has(targetNumber)) return;
+      if (takenNumbers[targetNumber]) return;
+      
       const result = await makeBotMove.mutateAsync({ sessionId });
-      if (cancelled) return;
       if (result?.success) await refetch();
     } catch (err) {
       console.error('Bot move error:', err);
     } finally {
       botThinkingRef.current = false;
     }
-
-    return () => { cancelled = true; };
-  }, [sessionId, makeBotMove, refetch, isProcessingMove, locallyLockedNumbers]);
+  }, [sessionId, makeBotMove, refetch, myMoves, takenNumbers]);
 
   useEffect(() => {
-    const hasBot = players?.some((p: Player) => p.isBot);
+    const hasBot = players?.some(p => p.isBot);
     if (!hasBot) return;
     if (gameStatus !== 'active') return;
     if (winner) return;
     if (currentNumber > 25) return;
-
-    let cleanupFn: (() => void) | undefined;
-    runBotMove().then((fn: (() => void) | undefined) => { cleanupFn = fn; });
-
-    return () => {
-      if (cleanupFn) cleanupFn();
-    };
+    runBotMove();
   }, [currentNumber, gameStatus, winner, players, runBotMove]);
 
   if (!grid || grid.length === 0) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          background: '#0b0f1a',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
+      <div style={{ minHeight: '100vh', background: '#0b0f1a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ color: 'white' }}>Загрузка игры...</div>
       </div>
     );
   }
 
   const isFinished = gameStatus === 'finished';
-  const humanPlayers = players?.filter((p: Player) => !p.isBot) || [];
+  const humanPlayers = players?.filter(p => !p.isBot) || [];
   const maxPlayers = state?.maxPlayers || 4;
-  const waitingForPlayers =
-    !players?.some((p: Player) => p.isBot) &&
-    humanPlayers.length < maxPlayers &&
-    gameStatus === 'waiting';
+  const waitingForPlayers = !players?.some(p => p.isBot) && humanPlayers.length < maxPlayers && gameStatus === 'waiting';
 
   const getWinnerLabel = (): string => {
     if (!winner) return '';
@@ -301,78 +219,34 @@ export default function GameBoard({ sessionId, userId }: Props) {
     <div style={{ minHeight: '100vh', background: '#0b0f1a' }}>
       <Header />
       <div style={{ maxWidth: '1200px', margin: '40px auto', padding: '0 24px' }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '32px',
-          }}
-        >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
           <div>
             <div style={{ color: '#9ca3af' }}>Комната #{shortSessionId}</div>
-            {waitingForPlayers && (
-              <div style={{ color: '#fbbf24', fontSize: '12px' }}>
-                Ожидание игроков... ({humanPlayers.length}/{maxPlayers})
-              </div>
-            )}
-            {gameStatus === 'active' && !isFinished && (
-              <div style={{ color: '#10b981', fontSize: '12px' }}>Игра идёт!</div>
-            )}
-            {isFinished && (
-              <div style={{ color: '#ef4444', fontSize: '12px' }}>Игра окончена</div>
-            )}
+            {waitingForPlayers && <div style={{ color: '#fbbf24', fontSize: '12px' }}>Ожидание игроков... ({humanPlayers.length}/{maxPlayers})</div>}
+            {gameStatus === 'active' && !isFinished && <div style={{ color: '#10b981', fontSize: '12px' }}>Игра идёт!</div>}
+            {isFinished && <div style={{ color: '#ef4444', fontSize: '12px' }}>Игра окончена</div>}
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ color: '#9ca3af' }}>
-              {gameStatus === 'active' ? 'Найти число' : 'Ожидание'}
-            </div>
-            <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#a78bfa' }}>
-              {gameStatus === 'active' && !isFinished ? currentNumber : '—'}
-            </div>
+            <div style={{ color: '#9ca3af' }}>{gameStatus === 'active' ? 'Найти число' : 'Ожидание'}</div>
+            <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#a78bfa' }}>{gameStatus === 'active' && !isFinished ? currentNumber : '—'}</div>
             <div style={{ color: '#6b7280' }}>из 25</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ color: '#9ca3af' }}>Время игры</div>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fbbf24' }}>
-              {formatTime(timeElapsed)}
-            </div>
+            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fbbf24' }}>{formatTime(timeElapsed)}</div>
           </div>
         </div>
 
-        <div
-          style={{ display: 'grid', gridTemplateColumns: '250px 1fr 250px', gap: '24px' }}
-        >
-          {/* Левая панель - игроки */}
+        <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr 250px', gap: '24px' }}>
           <div style={{ background: '#101528', borderRadius: '20px', padding: '20px' }}>
             <h3 style={{ marginBottom: '16px', color: 'white' }}>Игроки</h3>
-            {players.map((player: Player, idx: number) => {
+            {players.map((player, idx) => {
               const isCurrentUser = String(player.userId) === String(userId);
               return (
-                <div
-                  key={idx}
-                  style={{
-                    padding: '12px',
-                    borderRadius: '12px',
-                    marginTop: '12px',
-                    background: isCurrentUser ? 'rgba(106,92,255,0.1)' : '#0b0f1a',
-                    border: isCurrentUser ? '1px solid #6a5cff' : '1px solid #1f2540',
-                  }}
-                >
+                <div key={idx} style={{ padding: '12px', borderRadius: '12px', marginTop: '12px', background: isCurrentUser ? 'rgba(106,92,255,0.1)' : '#0b0f1a', border: isCurrentUser ? '1px solid #6a5cff' : '1px solid #1f2540' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                    <div
-                      style={{
-                        width: '12px',
-                        height: '12px',
-                        borderRadius: '50%',
-                        background: player.color,
-                      }}
-                    />
-                    <span style={{ color: 'white' }}>
-                      {isCurrentUser
-                        ? 'Вы'
-                        : player.name || (player.isBot ? '🤖 Бот' : `Игрок ${player.userId?.slice(0, 4)}`)}
-                    </span>
+                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: player.color }} />
+                    <span style={{ color: 'white' }}>{isCurrentUser ? 'Вы' : (player.name || (player.isBot ? '🤖 Бот' : `Игрок ${player.userId?.slice(0, 4)}`))}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#9ca3af' }}>
                     <span>Ошибок: {player.errors || 0}</span>
@@ -383,7 +257,6 @@ export default function GameBoard({ sessionId, userId }: Props) {
             })}
           </div>
 
-          {/* Центр - игровое поле */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '24px' }}>
             {waitingForPlayers ? (
               <div style={{ textAlign: 'center', padding: '60px', color: '#9ca3af' }}>
@@ -395,32 +268,15 @@ export default function GameBoard({ sessionId, userId }: Props) {
                 <div style={{ fontSize: '64px', marginBottom: '16px' }}>🏆</div>
                 <h2 style={{ color: 'white', marginBottom: '8px' }}>{getWinnerLabel()}</h2>
                 <p style={{ color: '#fbbf24', marginBottom: '16px' }}>Время: {formatTime(timeElapsed)}</p>
-                <button
-                  onClick={handleExit}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#6a5cff',
-                    border: 'none',
-                    borderRadius: '10px',
-                    color: 'white',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Выйти
-                </button>
+                <button onClick={handleExit} style={{ padding: '10px 20px', background: '#6a5cff', border: 'none', borderRadius: '10px', color: 'white', cursor: 'pointer' }}>Выйти</button>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
-                {grid.flat().map((num: number, idx: number) => {
+                {grid.flat().map((num, idx) => {
                   const cellColor = takenNumbers[num];
                   const isCurrent = num === currentNumber;
-                  // Учитываем локальную блокировку
-                  const isLocallyLocked = locallyLockedNumbers.has(num);
-                  const isDisabled = !!cellColor || myMoves.has(num) || isLocallyLocked || isFinished || gameStatus !== 'active' || isProcessingMove;
-                  
-                  // Особая подсветка для локально заблокированных чисел (показываем цвет игрока)
-                  const displayColor = cellColor || (isLocallyLocked ? myColor : null);
-                  
+                  // Блокируем ТОЛЬКО занятые числа и текущее число, которое уже нажал игрок
+                  const isDisabled = !!cellColor || myMoves.has(num) || isFinished || gameStatus !== 'active';
                   return (
                     <button
                       key={idx}
@@ -431,19 +287,15 @@ export default function GameBoard({ sessionId, userId }: Props) {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: displayColor || '#1a1f33',
+                        background: cellColor || '#1a1f33',
                         borderRadius: '12px',
                         fontSize: '20px',
                         fontWeight: 'bold',
-                        color: displayColor ? 'white' : '#E8EAFF',
-                        border: isCurrent && !displayColor && gameStatus === 'active'
-                          ? '3px solid #F5A623'
-                          : '1px solid #2a2f45',
+                        color: cellColor ? 'white' : '#E8EAFF',
+                        border: isCurrent && !cellColor && gameStatus === 'active' ? '3px solid #F5A623' : '1px solid #2a2f45',
                         cursor: isDisabled ? 'not-allowed' : 'pointer',
                         opacity: isDisabled ? 0.6 : 1,
-                        boxShadow: isCurrent && !displayColor && gameStatus === 'active'
-                          ? '0 0 15px rgba(245,166,35,0.6)'
-                          : 'none',
+                        boxShadow: isCurrent && !cellColor && gameStatus === 'active' ? '0 0 15px rgba(245,166,35,0.6)' : 'none',
                         transition: 'all 0.05s ease',
                       }}
                     >
@@ -455,54 +307,12 @@ export default function GameBoard({ sessionId, userId }: Props) {
             )}
           </div>
 
-          {/* Правая панель - информация */}
           <div style={{ background: '#101528', borderRadius: '20px', padding: '20px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ color: '#9ca3af' }}>Ваш цвет</div>
-              <div
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  background: myColor,
-                  margin: '8px auto',
-                }}
-              />
-            </div>
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ color: '#9ca3af' }}>Ваш прогресс</div>
-              <div style={{ fontSize: '36px', fontWeight: 'bold', color: 'white' }}>
-                {myProgress}/25
-              </div>
-            </div>
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ color: '#9ca3af' }}>Следующее число</div>
-              <div style={{ fontSize: '36px', fontWeight: 'bold', color: '#a78bfa' }}>
-                {gameStatus === 'active' && !isFinished ? currentNumber : '—'}
-              </div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ color: '#9ca3af' }}>Ошибок</div>
-              <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#ef4444' }}>
-                {myErrors}
-              </div>
-            </div>
-            <div style={{ marginTop: '24px', textAlign: 'center' }}>
-              <button
-                onClick={handleExit}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: '10px',
-                  background: 'transparent',
-                  border: '1px solid #ef4444',
-                  color: '#ef4444',
-                  cursor: 'pointer',
-                  width: '100%',
-                }}
-              >
-                Выйти из комнаты
-              </button>
-            </div>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}><div style={{ color: '#9ca3af' }}>Ваш цвет</div><div style={{ width: '32px', height: '32px', borderRadius: '50%', background: myColor, margin: '8px auto' }} /></div>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}><div style={{ color: '#9ca3af' }}>Ваш прогресс</div><div style={{ fontSize: '36px', fontWeight: 'bold', color: 'white' }}>{myProgress}/25</div></div>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}><div style={{ color: '#9ca3af' }}>Следующее число</div><div style={{ fontSize: '36px', fontWeight: 'bold', color: '#a78bfa' }}>{gameStatus === 'active' && !isFinished ? currentNumber : '—'}</div></div>
+            <div style={{ textAlign: 'center' }}><div style={{ color: '#9ca3af' }}>Ошибок</div><div style={{ fontSize: '32px', fontWeight: 'bold', color: '#ef4444' }}>{myErrors}</div></div>
+            <div style={{ marginTop: '24px', textAlign: 'center' }}><button onClick={handleExit} style={{ padding: '10px 20px', borderRadius: '10px', background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', cursor: 'pointer', width: '100%' }}>Выйти из комнаты</button></div>
           </div>
         </div>
       </div>
